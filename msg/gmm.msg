@@ -1,0 +1,10 @@
+std_msgs/Header header
+uint8 mix_num
+float32[] prior
+float32[] x
+float32[] y
+float32[] z
+float32[] x_var
+float32[] y_var
+float32[] z_var  
+geometry_msgs/Pose pose
