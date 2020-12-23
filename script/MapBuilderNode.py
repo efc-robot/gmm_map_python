@@ -4,7 +4,8 @@
 from std_msgs.msg import Header
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs import point_cloud2
-from geometry_msgs.msg import Pose, PoseStamped, Transform, TransformStamped
+from geometry_msgs.msg import Pose, PoseStamped, Transform, TransformStamped, Quaternion
+from nav_msgs.msg import Path
 import tf
 import tf2_ros
 from tf2_sensor_msgs import do_transform_cloud
@@ -187,7 +188,7 @@ class InsubmapProcess:
         self.robot_id = robot_id
         self.submap_pose_odom = init_pose_odom #相比于odom坐标系的位姿(介入odom),一旦输入就不会改变
         self.submap_pose = init_pose_map #相比于map坐标系的位姿势,一般是从上一个submap递推得到,优化也优化这个
-        self.add_time = add_timtransform_submap_odome
+        self.add_time = add_time
         self.submap_point_clouds = np.zeros((0,3)) #TODO LOCK #讲道理访问这个东西的时候需要加锁
         self.clf = GaussianMixture(n_components=100, covariance_type='diag')
         self.GMMmodel = None
@@ -225,10 +226,14 @@ class TrajMapBuilder:
         self.current_submap_id = 0
         self.list_of_submap = []
 
+        self.path = Path()
+
         self.newsubmap_builder = None
         self.prefixsubmap_builder = None
 
 
+        self.pose_pub = rospy.Publisher('/pose', PoseStamped, queue_size=1)
+        self.path_pub = rospy.Publisher('/path', Path, queue_size=1)
 
 
         self.test_pc2_pub = rospy.Publisher('/testpoints', PointCloud2,queue_size=1)
@@ -321,7 +326,7 @@ class TrajMapBuilder:
             transform_odom_base = self.tf2_buffer.lookup_transform('odom','base_link', pointtime) #得到了 baselink 在odom 坐标系中的位置
 
             cur_odom_base = transstamp2Rigidtrans(transform_odom_base)
-            sub_odom_base = pose2Rigidtrans(self.newsubmap_builder.submap_pose_odom , 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index) ,'odom')
+            sub_odom_base = pose2Rigidtrans(self.newsubmap_builder.submap_pose_odom , from_frame='submap_base_link_{}'.format(self.newsubmap_builder.submap_index) ,to_frame='odom')
             
             Tmsg_sub_cur = sub_odom_base.inverse()*cur_odom_base
             T_sub_cur = Rigidtrans2transstamped(Tmsg_sub_cur)
@@ -342,6 +347,17 @@ class TrajMapBuilder:
             outputpoints = do_transform_cloud(showpoints,transform_submap_odom)
 
             self.test_pc2_pub.publish(outputpoints)
+
+
+        robot_pose = PoseStamped()
+        robot_pose.pose = trans2pose(transform_odom_base.transform)
+        robot_pose.header.frame_id = 'odom'
+        robot_pose.header.stamp = rospy.Time.now()
+
+        self.pose_pub.publish(robot_pose)
+        self.path.poses.append(robot_pose)
+        self.path.header = robot_pose.header
+        self.path_pub.publish(self.path)
             
 
 def main():
