@@ -4,7 +4,8 @@
 from std_msgs.msg import Header
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs import point_cloud2
-from geometry_msgs.msg import Pose, PoseStamped, Transform, TransformStamped
+from geometry_msgs.msg import Pose, PoseStamped, Transform, TransformStamped, Quaternion
+from nav_msgs.msg import Path
 import tf
 import tf2_ros
 from tf2_sensor_msgs import do_transform_cloud
@@ -226,10 +227,14 @@ class TrajMapBuilder:
         self.current_submap_id = 0
         self.list_of_submap = []
 
+        self.path = Path()
+
         self.newsubmap_builder = None
         self.prefixsubmap_builder = None
 
 
+        self.pose_pub = rospy.Publisher('/pose', PoseStamped, queue_size=1)
+        self.path_pub = rospy.Publisher('/path', Path, queue_size=1)
 
 
         self.test_pc2_pub = rospy.Publisher('/testpoints', PointCloud2,queue_size=1)
@@ -322,7 +327,7 @@ class TrajMapBuilder:
             transform_odom_base = self.tf2_buffer.lookup_transform('odom','base_link', pointtime) #得到了 baselink 在odom 坐标系中的位置
 
             cur_odom_base = transstamp2Rigidtrans(transform_odom_base)
-            sub_odom_base = pose2Rigidtrans(self.newsubmap_builder.submap_pose_odom , 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index) ,'odom')
+            sub_odom_base = pose2Rigidtrans(self.newsubmap_builder.submap_pose_odom , from_frame='submap_base_link_{}'.format(self.newsubmap_builder.submap_index) ,to_frame='odom')
             
             Tmsg_sub_cur = sub_odom_base.inverse()*cur_odom_base
             T_sub_cur = Rigidtrans2transstamped(Tmsg_sub_cur)
@@ -343,6 +348,17 @@ class TrajMapBuilder:
             outputpoints = do_transform_cloud(showpoints,transform_submap_odom)
 
             self.test_pc2_pub.publish(outputpoints)
+
+
+        robot_pose = PoseStamped()
+        robot_pose.pose = trans2pose(transform_odom_base.transform)
+        robot_pose.header.frame_id = 'odom'
+        robot_pose.header.stamp = rospy.Time.now()
+
+        self.pose_pub.publish(robot_pose)
+        self.path.poses.append(robot_pose)
+        self.path.header = robot_pose.header
+        self.path_pub.publish(self.path)
             
 
 def main():

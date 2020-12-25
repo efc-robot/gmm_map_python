@@ -8,8 +8,8 @@
 </node> -->
 
 <!-- <node pkg="submap" name="rviz_gmm" type="basic_shapes" output="screen" required="true"/> -->
-<node pkg="gmm_map_python" name="talker" type="gmm_transform.py" output="screen" required="true"/>
+<!-- <node pkg="gmm_map_python" name="talker" type="gmm_transform.py" output="screen" required="true"/> -->
 <node pkg="gmm_map_python" name="MapBuilderNode" type="MapBuilderNode.py" output="screen" required="true"/>
-<node pkg="gmm_map_python" name="visualgmm" type="visualgmm.py" output="screen" required="true"/>
+<!-- <node pkg="gmm_map_python" name="visualgmm" type="visualgmm.py" output="screen" required="true"/> -->
 <node pkg="gmm_map_python" name="Downsample" type="DownSampleNode" output="screen" required="true"/>
 </launch>
