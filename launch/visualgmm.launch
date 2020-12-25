@@ -12,4 +12,5 @@
 <node pkg="gmm_map_python" name="MapBuilderNode" type="MapBuilderNode.py" output="screen" required="true"/>
 <!-- <node pkg="gmm_map_python" name="visualgmm" type="visualgmm.py" output="screen" required="true"/> -->
 <node pkg="gmm_map_python" name="Downsample" type="DownSampleNode" output="screen" required="true"/>
+<node pkg="rviz" name="rvizview" type="rviz" output="screen" args="-d $(find gmm_map_python)/rviz/1.rviz" required="false"/>
 </launch>

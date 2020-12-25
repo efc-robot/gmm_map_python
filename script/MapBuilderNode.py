@@ -16,7 +16,7 @@ from autolab_core import RigidTransform
 import time
 from sklearn.mixture import GaussianMixture
 import threading
-import gtsam
+# import gtsam
 
 COVAR_STR = "1.000000 0.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000   1.000000 0.000000   1.000000"
 
@@ -242,9 +242,9 @@ class TrajMapBuilder:
         self.new_self_submap_sub = rospy.Subscriber('/sampled_points', PointCloud2, self.callback_new_self_pointcloud)
         self.new_self_loop_sub = rospy.Subscriber('/sampled_points', PointCloud2, self.callback_add_sim_loop)
 
-        self.backt = threading.Thread(target=self.BackendThread)
-        self.backt.setDaemon(True)
-        self.backt.start()
+        # self.backt = threading.Thread(target=self.BackendThread)
+        # self.backt.setDaemon(True)
+        # self.backt.start()
 
     def BackendThread(self):
         while True:

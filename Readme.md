@@ -20,3 +20,15 @@ pip install sklearn
 目前采用自己录制的数据集 30sec.bag
 
 ## 使用方法
+
+先启动可视化和建图节点
+
+```
+roslaunch gmm_map_python visualgmm.launch
+```
+
+再播放相关的数据记录(得cd到.bag文件所在的文件夹中)
+
+```
+rosbag play --clock --keep-alive 30sec.bag
+```
