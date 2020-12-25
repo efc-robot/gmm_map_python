@@ -15,7 +15,7 @@ from autolab_core import RigidTransform
 import time
 from sklearn.mixture import GaussianMixture
 import threading
-# import gtsam
+import gtsam
 
 COVAR_STR = "1.000000 0.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000   1.000000 0.000000   1.000000"
 
@@ -187,10 +187,11 @@ class InsubmapProcess:
         self.robot_id = robot_id
         self.submap_pose_odom = init_pose_odom #相比于odom坐标系的位姿(介入odom),一旦输入就不会改变
         self.submap_pose = init_pose_map #相比于map坐标系的位姿势,一般是从上一个submap递推得到,优化也优化这个
-        self.add_time = add_timtransform_submap_odome
+        self.add_time = add_time
         self.submap_point_clouds = np.zeros((0,3)) #TODO LOCK #讲道理访问这个东西的时候需要加锁
         self.clf = GaussianMixture(n_components=100, covariance_type='diag')
         self.GMMmodel = None
+        self.Octomap = None
 
     
     def insert_point(self, in_point_cloud):
@@ -236,9 +237,9 @@ class TrajMapBuilder:
         self.new_self_submap_sub = rospy.Subscriber('/sampled_points', PointCloud2, self.callback_new_self_pointcloud)
         self.new_self_loop_sub = rospy.Subscriber('/sampled_points', PointCloud2, self.callback_add_sim_loop)
 
-        # self.backt = threading.Thread(target=self.BackendThread)
-        # self.backt.setDaemon(True)
-        # self.backt.start()
+        self.backt = threading.Thread(target=self.BackendThread)
+        self.backt.setDaemon(True)
+        self.backt.start()
 
     def BackendThread(self):
         while True:
