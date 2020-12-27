@@ -16,6 +16,9 @@ from autolab_core import RigidTransform
 import time
 from sklearn.mixture import GaussianMixture
 import threading
+import octomap
+from octomap_msgs.msg import Octomap
+
 # import gtsam
 
 COVAR_STR = "1.000000 0.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000   1.000000 0.000000   1.000000"
@@ -245,6 +248,7 @@ class TrajMapBuilder:
         self.list_of_submap = []
 
         self.path = Path()
+        self.octomap = octomap.OcTree(0.1)
 
         self.newsubmap_builder = None
         self.prefixsubmap_builder = None
@@ -258,10 +262,13 @@ class TrajMapBuilder:
         self.self_pc_sub = rospy.Subscriber('/sampled_points', PointCloud2, self.callback_self_pointcloud)
         self.new_self_submap_sub = rospy.Subscriber('/sampled_points', PointCloud2, self.callback_new_self_pointcloud)
         self.new_self_loop_sub = rospy.Subscriber('/sampled_points', PointCloud2, self.callback_add_sim_loop)
+        self.transform_sub1_odom_br = tf2_ros.StaticTransformBroadcaster()
 
         self.backpubglobalpoint = threading.Thread(target=self.pointmap_single_thread)
         self.backpubglobalpoint.setDaemon(True)
         self.backpubglobalpoint.start()
+
+        self.transform_firstsubmap_odom = None
 
         # self.backt = threading.Thread(target=self.BackendThread)
         # self.backt.setDaemon(True)
@@ -311,6 +318,14 @@ class TrajMapBuilder:
             print("self.new_self_submap")
             self.tf_listener.waitForTransform('odom','base_link',pointtime,rospy.Duration(0.005))
             transform_odom_base = self.tf2_buffer.lookup_transform('odom','base_link', pointtime) #得到了 baselink 在odom 坐标系中的位置
+            if self.current_submap_id == 0:
+                self.transform_firstsubmap_odom = transform_odom_base
+                self.transform_firstsubmap_odom.child_frame_id = 'submap_1'
+                self.transform_firstsubmap_odom.header.frame_id = 'odom'
+                self.transform_firstsubmap_odom.header.stamp = rospy.Time.now()
+                self.transform_sub1_odom_br.sendTransform(self.transform_firstsubmap_odom)
+            else:
+                self.transform_sub1_odom_br.sendTransform(self.transform_firstsubmap_odom)
             
             self.prefixsubmap_builder = self.newsubmap_builder
 
