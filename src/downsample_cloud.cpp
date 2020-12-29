@@ -48,8 +48,8 @@ void DownSamplePointCloud2::pointcloudCallback(sensor_msgs::PointCloud2 img){
 }
 
 void DownSamplePointCloud2::initFilter(ros::NodeHandle nh){
-    point_sub_ = nh.subscribe<sensor_msgs::PointCloud2>("/points", 1, &DownSamplePointCloud2::pointcloudCallback,this);
-    point_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/sampled_points",1,this);
+    point_sub_ = nh.subscribe<sensor_msgs::PointCloud2>("points", 1, &DownSamplePointCloud2::pointcloudCallback,this);
+    point_pub_ = nh.advertise<sensor_msgs::PointCloud2>("sampled_points",1,this);
 }
 
 int main(int argc, char** argv)
