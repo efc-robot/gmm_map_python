@@ -83,7 +83,7 @@ Visualization Manager:
       Size (Pixels): 3
       Size (m): 0.009999999776482582
       Style: Flat Squares
-      Topic: /sampled_points
+      Topic: /robot1/Downsample/sampled_points
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -183,6 +183,49 @@ Visualization Manager:
       Voxel Alpha: 1
       Voxel Coloring: Z-Axis
       Voxel Rendering: Occupied Voxels
+    - Class: rviz/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        robot1/d435i_aligned_depth_to_color_frame:
+          Value: true
+        robot1/d435i_color_frame:
+          Value: true
+        robot1/d435i_color_optical_frame:
+          Value: true
+        robot1/d435i_depth_frame:
+          Value: true
+        robot1/d435i_depth_optical_frame:
+          Value: true
+        robot1/d435i_link:
+          Value: true
+        robot1/t265_link:
+          Value: true
+        robot1/t265_odom_frame:
+          Value: true
+        robot1/t265_pose_frame:
+          Value: true
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        robot1/t265_odom_frame:
+          robot1/t265_pose_frame:
+            robot1/t265_link:
+              robot1/d435i_link:
+                robot1/d435i_aligned_depth_to_color_frame:
+                  robot1/d435i_color_optical_frame:
+                    {}
+                robot1/d435i_color_frame:
+                  {}
+                robot1/d435i_depth_frame:
+                  robot1/d435i_depth_optical_frame:
+                    {}
+      Update Interval: 0
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -218,9 +261,9 @@ Visualization Manager:
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.4795476794242859
-        Y: 3.3121206760406494
-        Z: -1.6506166458129883
+        X: -0.8240726590156555
+        Y: 0.16151635348796844
+        Z: -0.6433681845664978
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false

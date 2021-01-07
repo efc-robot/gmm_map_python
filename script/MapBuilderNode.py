@@ -288,7 +288,7 @@ class TrajMapBuilder:
                 consopt.constructproblem()
 
     def callback_new_self_pointcloud(self, data): #这个函数负责确定何时开始一个新的关键帧率,目前只是用来调试
-        if (self.new_self_submap_count < 10):
+        if (self.new_self_submap_count < 40):
             self.new_self_submap_count += 1
         else:
             self.new_self_submap = True # 当设置为True说明有一个新的关键帧
@@ -296,7 +296,7 @@ class TrajMapBuilder:
 
     def callback_add_sim_loop(self, data):
         self.new_self_loop_count += 1
-        if (self.new_self_loop_count == 40):
+        if (self.new_self_loop_count == 40000):
             self.new_self_loop_count = 0
             T_first_cur = TransformStamped()
             T_first_cur.transform.rotation.w = 1
@@ -335,7 +335,7 @@ class TrajMapBuilder:
                 # self.con
             self.newsubmap_builder = InsubmapProcess( self.current_submap_id, self.self_robot_id, trans2pose(transform_odom_base.transform), trans2pose(transform_odom_base.transform), pointtime )
             baselink_pointcloud.header.frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
-            self.newsubmap_builder.insert_point(baselink_pointcloud)
+            # self.newsubmap_builder.insert_point(baselink_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
 
             if not (self.prefixsubmap_builder == None): #如果不是第一帧,就需要把之前的帧给保存下来
                 self.list_of_submap.append(self.prefixsubmap_builder) #保存之前的submap
@@ -369,7 +369,7 @@ class TrajMapBuilder:
 
             sub_pointcloud = do_transform_cloud(baselink_pointcloud,T_sub_cur) #在 submap pose 坐标系中的点云
             sub_pointcloud.header.frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
-            self.newsubmap_builder.insert_point(sub_pointcloud)
+            # self.newsubmap_builder.insert_point(sub_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
 
 
             
