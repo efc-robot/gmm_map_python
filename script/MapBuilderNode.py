@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from std_msgs.msg import Header
+from std_msgs.msg import Header, String
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs import point_cloud2
 from geometry_msgs.msg import Pose, PoseStamped, Transform, TransformStamped, Quaternion
@@ -16,13 +16,18 @@ from autolab_core import RigidTransform
 import time
 from sklearn.mixture import GaussianMixture
 import threading
+import random
+import pickle
 # import octomap
 # from octomap_msgs.msg import Octomap
 
-# import gtsam
+import gtsam
 
 COVAR_STR = "1.000000 0.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000   1.000000 0.000000   1.000000"
 
+
+def strip_leading_slash(s):
+    return s[1:] if s.startswith("/") else s
 
 def trans2pose(trans):
     pose = Pose()
@@ -82,6 +87,52 @@ def poseID2robotID(poseID):
 
 def robotID2poseID(robot_id , submap_index):
     return int(submap_index + 1e8*robot_id)
+
+def voxel_filter(point_cloud, leaf_size,filter_mode):
+    filtered_points = []
+    # 作业3
+    # 屏蔽开始
+    #step1 计算边界点
+    x_max, y_max, z_max = np.amax(point_cloud,axis=0)      #计算 x,y,z三个维度的最值
+    x_min, y_min, z_min = np.amin(point_cloud, axis=0)
+    #step2 确定体素的尺寸
+    size_r = leaf_size
+    #step3 计算每个 volex的维度
+    Dx = (x_max - x_min)/size_r
+    Dy = (y_max - y_min)/size_r
+    Dz = (z_max - z_min)/size_r
+    #step4 计算每个点在volex grid内每一个维度的值
+    h = list()
+    for i in range(len(point_cloud)):
+        hx = np.floor((point_cloud[i][0] - x_min)/size_r)
+        hy = np.floor((point_cloud[i][1] - y_min)/size_r)
+        hz = np.floor((point_cloud[i][2] - z_min)/size_r)
+        h.append(hx + hy*Dx + hz*Dx*Dy)
+    #step5 对h值进行排序
+    h = np.array(h)
+    h_indice  = np.argsort(h)   #提取索引
+    h_sorted = h[h_indice]      #升序
+    count = 0 #用于维度的累计
+    #将h值相同的点放入到同一个grid中，并进行筛选
+    for i  in range(len(h_sorted)-1):      #0-19999个数据点
+        if h_sorted[i] == h_sorted[i+1]:   #当前的点与后面的相同，放在同一个volex grid中
+            continue
+        else:
+            if(filter_mode == "centroid"):    #均值滤波
+                point_idx = h_indice[count: i+1]
+                filtered_points.append(np.mean(point_cloud[point_idx],axis=0))   #取同一个grid的均值
+                count = i
+            elif(filter_mode == "random"):  #随机滤波
+                point_idx = h_indice[count: i+1]
+                random_points =  random.choice(point_cloud[point_idx])
+                filtered_points.append(random_points)
+                count = i
+
+    # 屏蔽结束
+
+    # 把点云格式改成array，并对外返回
+    filtered_points = np.array(filtered_points, dtype=np.float64)
+    return filtered_points
 
 
 class ConstrOptimizer:
@@ -196,6 +247,7 @@ class InsubmapProcess:
         self.clf = GaussianMixture(n_components=100, covariance_type='diag')
         self.GMMmodel = None
         self.Octomap = None
+        self.freezed = False
 
     
     def insert_point(self, in_point_cloud, ifcheck = True):
@@ -208,10 +260,12 @@ class InsubmapProcess:
         gen_np_cloud = np.array(gen_cloud_point)
         
         self.submap_point_clouds = np.concatenate( (self.submap_point_clouds,gen_np_cloud), axis=0 ) #TODO LOCK
+        self.filter_point() #每次添加了新点云都进行一次滤波
 
     def filter_point(self):
-        pass
         #要删除重复的点云
+        self.submap_point_clouds = voxel_filter(self.submap_point_clouds,0.1,"centroid")
+        return self.submap_point_clouds
 
     def model_gmm(self): #用GMM完成地图构建,第一个版本暂时不研究地图,只考虑轨迹合并
         self.GMMmodel = self.clf.fit(self.submap_point_clouds)
@@ -224,18 +278,36 @@ class InsubmapProcess:
         transform_submap_odom = TransformStamped()
         transform_submap_odom.transform = pose2trans(self.submap_pose_odom)
         transform_submap_odom.child_frame_id = 'submap_base_link_{}'.format(self.submap_index)
-        transform_submap_odom.header.frame_id = 'odom'
+        transform_submap_odom.header.frame_id = 'odom' #实际上这个用来变换点云的函数并没有用到这个frameID
 
         outputpoints = do_transform_cloud(showpoints,transform_submap_odom)
         return outputpoints
+
+    def gen_descriptor_pntcld(self):
+        self.filter_point() #把点云进行滤波
+        self.freezed = True
+        # TODO 讲道理应该用点云生成描述子
+        tmp = 1
+
+    def get_submap_pose_stamped(self):
+        result = PoseStamped()
+        result.pose = self.submap_pose
+        result.header.frame_id = 'submap_base_link_{}'.format(self.submap_index)
+        result.header.stamp = self.add_time
+        return result
+
+    def get_submap_pose_odom_stamped(self):
+        result = PoseStamped()
+        result.pose = self.submap_pose_odom
+        result.header.frame_id = 'submap_base_link_{}'.format(self.submap_index)
+        result.header.stamp = self.add_time
+        return result
 
 
 class TrajMapBuilder:
     def __init__(self, self_id):
         self.self_robot_id = self_id
-        self.self_submap_pose_odom = [] #从里程计来的位姿,align输出每个关键帧
         self.self_constraint = [] #优化的单个机器人内部约束的
-        self.self_submap_pose = [] # 优化过后的位姿势
         self.new_self_submap = True # 如果有是新的关键帧,这个会变成 True,在 callback_self_pointcloud 中接收到新的关键帧率.并把他改成 False
         self.new_self_loop = False # 如果有是新的关键帧,这个会变成 True, 在后端优化中,讲这个置为false
         self.new_self_submap_count = 0 #调试过程中记录帧数,用于新建submap
@@ -249,22 +321,34 @@ class TrajMapBuilder:
         # import pdb; pdb.set_trace()
         self.baselink_frame = rospy.get_param('~baselink_frame','base_link')
         self.odom_frame = rospy.get_param('~odom_frame','odom')
+        self.map_frame = rospy.get_param('~map_frame','map')
+
+        self.br_ego_mapodom = tf.TransformBroadcaster()
+        self.tans_ego_mapodom = TransformStamped()
+        self.tans_ego_mapodom.header.frame_id = self.map_frame
+        self.tans_ego_mapodom.child_frame_id = self.odom_frame
+        self.tans_ego_mapodom.transform.rotation.w = 1
 
         self.path = Path()
+        self.pathodom = Path()
         # self.octomap = octomap.OcTree(0.1)
 
         self.newsubmap_builder = None
         self.prefixsubmap_builder = None
 
 
-        self.pose_pub = rospy.Publisher('pose', PoseStamped, queue_size=1)
+        # self.pose_pub = rospy.Publisher('pose', PoseStamped, queue_size=1)
         self.path_pub = rospy.Publisher('path', Path, queue_size=1)
-
+        self.path_pubodom = rospy.Publisher('pathodom', Path, queue_size=1)
+        self.submap_publisher = rospy.Publisher('/all_submap',String, queue_size=1)
 
         self.test_pc2_pub = rospy.Publisher('testpoints', PointCloud2,queue_size=1)
-        self.self_pc_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_self_pointcloud)
-        self.new_self_submap_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_new_self_pointcloud)
+        self.self_pc_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_self_pointcloud,queue_size=1)
+        self.new_self_submap_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_new_self_pointcloud,queue_size=1)
         self.new_self_loop_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_add_sim_loop)
+
+        self.new_submap_listener = rospy.Subscriber('/all_submap', String, self.callback_submap_listener)
+
         self.transform_sub1_odom_br = tf2_ros.StaticTransformBroadcaster()
 
         # self.backpubglobalpoint = threading.Thread(target=self.pointmap_single_thread)
@@ -273,9 +357,31 @@ class TrajMapBuilder:
 
         self.transform_firstsubmap_odom = None
 
-        # self.backt = threading.Thread(target=self.BackendThread)
-        # self.backt.setDaemon(True)
-        # self.backt.start()
+        self.backt = threading.Thread(target=self.BackendThread)
+        self.backt.setDaemon(True)
+        self.backt.start()
+    
+    def callback_submap_listener(self, data):
+        recvstr = data.data
+        recvsubmap = pickle.loads(recvstr)
+        print(recvsubmap.robot_id)
+        print(recvsubmap.submap_index)
+
+    def refresh_ego_mapodom_tf(self): #这一帧,根据MAP和ODOM最近的submap,计算map和odom的偏差
+        # import pdb; pdb.set_trace()
+        odom_last_pose = self.newsubmap_builder.submap_pose_odom
+        map_last_pose = self.newsubmap_builder.submap_pose
+        T_odom_nowpose = pose2Rigidtrans(odom_last_pose,'current',self.odom_frame)
+        T_map_nowpose = pose2Rigidtrans(map_last_pose,'current',self.map_frame)
+        T_map_odom =  T_map_nowpose * T_odom_nowpose.inverse()
+        # print(T_map_odom)
+        transresult = Rigidtrans2transstamped(T_map_odom)
+        self.tans_ego_mapodom = transresult
+        self.tans_ego_mapodom.header.stamp = rospy.Time.now()
+        # print(self.tans_ego_mapodom)
+        self.br_ego_mapodom.sendTransformMessage(self.tans_ego_mapodom)
+
+        tmp = 1
 
     def BackendThread(self):
         while True:
@@ -286,6 +392,7 @@ class TrajMapBuilder:
                 self.new_self_loop = False                  
                 consopt = ConstrOptimizer(self.self_robot_id,self.list_of_submap,self.self_constraint, self.newsubmap_builder ,'/tmp/testg2o')
                 consopt.constructproblem()
+                self.refresh_ego_mapodom_tf()
 
     def callback_new_self_pointcloud(self, data): #这个函数负责确定何时开始一个新的关键帧率,目前只是用来调试
         if (self.new_self_submap_count < 40):
@@ -295,54 +402,52 @@ class TrajMapBuilder:
             self.new_self_submap_count = 0
 
     def callback_add_sim_loop(self, data):
-        self.new_self_loop_count += 1
-        if (self.new_self_loop_count == 40000):
+        # self.new_self_loop_count += 1
+        if (self.new_self_loop_count == 0 and len(self.list_of_submap) == 20):
             self.new_self_loop_count = 0
             T_first_cur = TransformStamped()
             T_first_cur.transform.rotation.w = 1
-            new_constraint = ConstraintTransform(self.self_robot_id,self.newsubmap_builder.submap_index,self.self_robot_id,0,T_first_cur )
+            new_constraint = ConstraintTransform(self.self_robot_id,self.newsubmap_builder.submap_index,self.self_robot_id,2,T_first_cur )
             self.self_constraint.append(new_constraint)
             self.new_self_loop = True # 当设置为True说明有一个新的关键帧
             tmp = 1
 
     def callback_self_pointcloud(self, data): #监听pointcloud,自己新建地图,并且保存对应的 odom.
-        print("get callback_self_pointcloud")
+        # print("get callback_self_pointcloud")
         assert isinstance(data, PointCloud2)
+        # print("PointCloud2 OK")
         pointheader = data.header
         pointtime = pointheader.stamp
+        if(pointtime < rospy.Time.now() - rospy.Duration(0.2) ):
+            return #这个主要是为了应对输入的点云太快的问题
         # pointtime = rospy.Time(0)
-        self.tf_listener.waitForTransform(self.baselink_frame,pointheader.frame_id,pointtime,rospy.Duration(0.05))
+        # print(self.baselink_frame)
+        # print(pointtime)
+        # print(rospy.Time.now() )
+        self.tf_listener.waitForTransform(self.baselink_frame,pointheader.frame_id,pointtime,rospy.Duration(0.11))
         transform_base_camera = self.tf2_buffer.lookup_transform(self.baselink_frame,pointheader.frame_id, pointtime) #将点云转换到当前 base_link 坐标系的变换(一般来说是固定的), 查询出来的是, source 坐标系在 target 坐标系中的位置.
 
         baselink_pointcloud = do_transform_cloud(data,transform_base_camera) #将 source(camera) 的点云 变换到 taget(base_link) 坐标系
 
 
-        self.tf_listener.waitForTransform(self.odom_frame,self.baselink_frame,pointtime,rospy.Duration(0.05))
+        self.tf_listener.waitForTransform(self.odom_frame,self.baselink_frame,pointtime,rospy.Duration(0.11))
         transform_odom_base = self.tf2_buffer.lookup_transform(self.odom_frame,self.baselink_frame, pointtime) #得到了 baselink 在odom 坐标系中的位置
         if self.new_self_submap: #说明要增加一个新的关键帧
             print("self.new_self_submap")
-            # if self.current_submap_id == 0:
-            #     self.transform_firstsubmap_odom = transform_odom_base
-            #     self.transform_firstsubmap_odom.child_frame_id = 'submap_1'
-            #     self.transform_firstsubmap_odom.header.frame_id = 'odom'
-            #     self.transform_firstsubmap_odom.header.stamp = rospy.Time.now()
-            #     self.transform_sub1_odom_br.sendTransform(self.transform_firstsubmap_odom)
-            # else:
-            #     self.transform_sub1_odom_br.sendTransform(self.transform_firstsubmap_odom)
-            
             self.prefixsubmap_builder = self.newsubmap_builder
 
                 # self.con
             self.newsubmap_builder = InsubmapProcess( self.current_submap_id, self.self_robot_id, trans2pose(transform_odom_base.transform), trans2pose(transform_odom_base.transform), pointtime )
             baselink_pointcloud.header.frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
-            # self.newsubmap_builder.insert_point(baselink_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
+            self.newsubmap_builder.insert_point(baselink_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
 
             if not (self.prefixsubmap_builder == None): #如果不是第一帧,就需要把之前的帧给保存下来
+                self.prefixsubmap_builder.gen_descriptor_pntcld() #生成对应的描述子(基于点云生成)
                 self.list_of_submap.append(self.prefixsubmap_builder) #保存之前的submap
                 # 计算和前一帧的 constraint
                 cur_odom_base = transstamp2Rigidtrans(transform_odom_base)
                 pre_odom_base = pose2Rigidtrans(self.prefixsubmap_builder.submap_pose_odom , 'submap_base_link_{}'.format(self.prefixsubmap_builder.submap_index) ,self.odom_frame)                
-                Tmsg_pre_cur = pre_odom_base.inverse()*cur_odom_base
+                Tmsg_pre_cur = pre_odom_base.inverse()*cur_odom_base #计算from当前 to 上一帧
                 T_pre_cur = Rigidtrans2transstamped(Tmsg_pre_cur)
                 T_pre_cur.child_frame_id = 'submap_base_link_{}'.format(self.current_submap_id)
 
@@ -353,6 +458,8 @@ class TrajMapBuilder:
 
                 self.newsubmap_builder.submap_pose = trans2pose(Rigidtrans2transstamped(new_pose_map).transform)
 
+                pubsubmap = pickle.dumps(self.prefixsubmap_builder)
+                self.submap_publisher.publish(pubsubmap) #将已经建好的submap广播出去
                 tmp = 1
 
 
@@ -360,7 +467,7 @@ class TrajMapBuilder:
             self.new_self_submap = False #准备接收下一个新的关键帧
             
         else: #在已完成初始化的关键帧上做任务
-
+            # print("在已完成初始化的关键帧上做任务")
             cur_odom_base = transstamp2Rigidtrans(transform_odom_base)
             sub_odom_base = pose2Rigidtrans(self.newsubmap_builder.submap_pose_odom , from_frame='submap_base_link_{}'.format(self.newsubmap_builder.submap_index) ,to_frame=self.odom_frame)
             
@@ -369,33 +476,57 @@ class TrajMapBuilder:
 
             sub_pointcloud = do_transform_cloud(baselink_pointcloud,T_sub_cur) #在 submap pose 坐标系中的点云
             sub_pointcloud.header.frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
-            # self.newsubmap_builder.insert_point(sub_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
+            self.newsubmap_builder.insert_point(sub_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
 
 
+        #这里是不论接收到哪些帧,都需要的操作
+        self.gen_submap_path()
+        self.gen_submap_pathodom()
+        self.path_pub.publish(self.path) #这个是打印轨迹,相对map
+        self.path_pubodom.publish(self.pathodom) #这个是打印轨迹,相对odom
+        self.refresh_ego_mapodom_tf() #更新map和pose的tf树
             
         # 调试点云的时候的可视化 
-            showpoints = np2pointcloud2(self.newsubmap_builder.submap_point_clouds,'submap_base_link_{}'.format(self.newsubmap_builder.submap_index) )   
-            transform_submap_odom = TransformStamped()
-            transform_submap_odom.transform = pose2trans(self.newsubmap_builder.submap_pose_odom)
-            transform_submap_odom.child_frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
-            transform_submap_odom.header.frame_id = self.odom_frame
+            # showpoints = np2pointcloud2(self.newsubmap_builder.submap_point_clouds,'submap_base_link_{}'.format(self.newsubmap_builder.submap_index) )   
+            # transform_submap_odom = TransformStamped()
+            # transform_submap_odom.transform = pose2trans(self.newsubmap_builder.submap_pose_odom)
+            # transform_submap_odom.child_frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
+            # transform_submap_odom.header.frame_id = self.odom_frame
 
-            outputpoints = do_transform_cloud(showpoints,transform_submap_odom)
+            # outputpoints = do_transform_cloud(showpoints,transform_submap_odom)
 
-            self.test_pc2_pub.publish(outputpoints)
+            # self.test_pc2_pub.publish(outputpoints)
 
 
-        robot_pose = PoseStamped()
-        robot_pose.pose = trans2pose(transform_odom_base.transform)
-        robot_pose.header.frame_id = self.odom_frame
-        robot_pose.header.stamp = rospy.Time.now()
+        # robot_pose = PoseStamped()
+        # robot_pose.pose = trans2pose(transform_odom_base.transform)
+        # robot_pose.header.frame_id = self.odom_frame
+        # robot_pose.header.stamp = rospy.Time.now()
 
-        self.pose_pub.publish(robot_pose)
-        self.path.poses.append(robot_pose)
-        self.path.header = robot_pose.header
-        self.path_pub.publish(self.path)
+        # self.pose_pub.publish(robot_pose)
+        # self.path.poses.append(robot_pose)
+        # self.path.header = robot_pose.header
+        # self.path_pub.publish(self.path)
 
-    def pointmap_merge_single(self):
+    def gen_submap_path(self):
+        self.path = Path()
+        self.path.header.frame_id = self.map_frame
+        self.path.header.stamp = rospy.Time.now()
+        for submap in self.list_of_submap:
+            self.path.poses.append(submap.get_submap_pose_stamped() )
+        self.path.poses.append(self.newsubmap_builder.get_submap_pose_stamped() )
+        return self.path
+
+    def gen_submap_pathodom(self):
+        self.pathodom = Path()
+        self.pathodom.header.frame_id = self.odom_frame
+        self.pathodom.header.stamp = rospy.Time.now()
+        for submap in self.list_of_submap:
+            self.pathodom.poses.append(submap.get_submap_pose_odom_stamped() )
+        self.pathodom.poses.append(self.newsubmap_builder.get_submap_pose_odom_stamped() )
+        return self.pathodom
+
+    def pointmap_merge_single(self): #将每一帧的点云都合并在一起可视化出来
         # final_result = PointCloud2()
         tmpmap_builder = InsubmapProcess(0,0,Pose(),Pose())
         # if (len(self.list_of_submap) <= 1):
@@ -406,7 +537,6 @@ class TrajMapBuilder:
         
         showpoints = np2pointcloud2(tmpmap_builder.submap_point_clouds,self.odom_frame)            
         # # 调试点云的时候的可视化    
-
         self.test_pc2_pub.publish(showpoints)
 
     def pointmap_single_thread(self):
@@ -414,6 +544,8 @@ class TrajMapBuilder:
             time.sleep(2)
             print("pointmap_thread")
             self.pointmap_merge_single()
+
+
 
 
 def main():

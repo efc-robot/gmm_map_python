@@ -30,10 +30,16 @@ private:
     ros::Publisher point_pub_;
     pcl::VoxelGrid<pcl::PointXYZ> sor_;
     pcl::PointCloud<pcl::PointXYZ> cloud_input_;
+    ros::Time current_time = ros::Time(0.1);
 
 };
 
 void DownSamplePointCloud2::pointcloudCallback(sensor_msgs::PointCloud2 img){
+
+    if ( img.header.stamp < current_time + ros::Duration(0.1) ){
+      return;
+    }
+    current_time = img.header.stamp;
     pcl::fromROSMsg(img, cloud_input_);
     std::vector<int> indices;
     pcl::removeNaNFromPointCloud(cloud_input_,cloud_input_, indices);
@@ -43,13 +49,15 @@ void DownSamplePointCloud2::pointcloudCallback(sensor_msgs::PointCloud2 img){
     sensor_msgs::PointCloud2 img_tmp;
     pcl::toROSMsg(cloud_input_,img_tmp);// to do: add other info, like tf, to this msg
     img_tmp.header=img.header;
+    std::cout << "ros time" << img_tmp.header.stamp << std::endl;
+    std::cout << "ros now time" << ros::Time::now() << std::endl;
     point_pub_.publish(img_tmp);
 
 }
 
 void DownSamplePointCloud2::initFilter(ros::NodeHandle nh){
-    point_sub_ = nh.subscribe<sensor_msgs::PointCloud2>("points", 1, &DownSamplePointCloud2::pointcloudCallback,this);
-    point_pub_ = nh.advertise<sensor_msgs::PointCloud2>("sampled_points",1,this);
+    point_sub_ = nh.subscribe<sensor_msgs::PointCloud2>("points", 0, &DownSamplePointCloud2::pointcloudCallback,this);
+    point_pub_ = nh.advertise<sensor_msgs::PointCloud2>("sampled_points", 0,this);
 }
 
 int main(int argc, char** argv)
