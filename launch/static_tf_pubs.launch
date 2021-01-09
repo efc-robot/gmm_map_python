@@ -1,0 +1,37 @@
+<launch>
+
+<arg name="robot_name" default="robot1"/>
+
+<param name="use_sim_time" value="true" />
+
+<node pkg="tf" type="static_transform_publisher" name="static1" args="0.0 0.0 0.0 0.0 0.0 0.0 1.0 $(arg robot_name)/d435i_link $(arg robot_name)/d435i_depth_frame 0.1" >
+    <remap from="tf" to="tf_static"/>
+</node>
+
+<node pkg="tf" type="static_transform_publisher" name="static2" args="0.0 0.0 0.0 -0.5 0.5 -0.5 0.5 $(arg robot_name)/d435i_depth_frame $(arg robot_name)/d435i_depth_optical_frame 0.1"  >
+    <remap from="tf" to="tf_static"/>
+</node>
+
+
+<node pkg="tf" type="static_transform_publisher" name="static3" args="0.000125603299239 0.0148815009743 0.00032901277882 0.00100495037623 -0.000294823839795 0.000396611576434 0.999999344349 $(arg robot_name)/d435i_link $(arg robot_name)/d435i_color_frame 0.1"  >
+    <remap from="tf" to="tf_static"/>
+</node>
+
+
+<node pkg="tf" type="static_transform_publisher" name="static4" args="0.0 0.0 0.0 -0.5 0.5 -0.5 0.5 $(arg robot_name)/d435i_aligned_depth_to_color_frame $(arg robot_name)/d435i_color_optical_frame 0.1"  >
+    <remap from="tf" to="tf_static"/>
+</node>
+
+<node pkg="tf" type="static_transform_publisher" name="static5" args="0.000125603299239 0.0148815009743 0.00032901277882 0.00100495037623 -0.000294823839795 0.000396611576434 0.999999344349 $(arg robot_name)/d435i_link $(arg robot_name)/d435i_aligned_depth_to_color_frame 0.1"  >
+    <remap from="tf" to="tf_static"/>
+</node>
+
+<node pkg="tf" type="static_transform_publisher" name="static6" args="0.0 0.0 0.0 0.0 0.0 0.0 1.0 $(arg robot_name)/t265_pose_frame $(arg robot_name)/t265_link 0.1"  >
+    <remap from="tf" to="tf_static"/>
+</node>
+
+<!-- <node pkg="rosbag" type="play" name="recordplay" args="--clock /media/yujc/File/realsence_rosbag/$(arg robot_name)map.bag" required="true">
+    <remap from="tf_static" to="tf_static_drop"/>
+</node> -->
+
+</launch>
