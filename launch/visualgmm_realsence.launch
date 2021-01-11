@@ -25,7 +25,7 @@
         <param name="map_frame" value="$(arg robot_name)/map"/>
 </node>
 
-<node pkg="rosbag" type="play" name="recordplay" args="--clock /media/yujc/File/rosbag_songhy_robot1_2/closeloop_final.bag" required="false">
+<node pkg="rosbag" type="play" name="recordplay" args="--clock /media/yujc/File/rosbag_songhy_robot1_2/closeloop_final2.bag" required="false">
 </node> 
 
 <node pkg="rviz" name="rvizview" type="rviz" output="screen" args="-d $(find gmm_map_python)/rviz/$(arg robot_name).rviz" required="false"/>

@@ -163,8 +163,8 @@ class ConstrOptimizer:
     def AddConstr2g2oEdge(self, g2ofname, constr):
         with open(g2ofname, "a") as g2ofile:
             for EDGEtrans in constr:
-                id1 = robotID2poseID(EDGEtrans.from_robot,EDGEtrans.from_index)
-                id2 = robotID2poseID(EDGEtrans.to_robot, EDGEtrans.to_index)
+                id1 = robotID2poseID(EDGEtrans.to_robot, EDGEtrans.to_index)
+                id2 = robotID2poseID(EDGEtrans.from_robot,EDGEtrans.from_index)
                 print >> g2ofile, "EDGE_SE3:QUAT {id1} {id2} {tx} {ty} {tz} {rx} {ry} {rz} {rw}  {COVAR_STR}".format(id1=id1,id2=id2, tx =EDGEtrans.constraint.transform.translation.x , ty =EDGEtrans.constraint.transform.translation.y , tz =EDGEtrans.constraint.transform.translation.z, rx =EDGEtrans.constraint.transform.rotation.x, ry =EDGEtrans.constraint.transform.rotation.y, rz =EDGEtrans.constraint.transform.rotation.z, rw =EDGEtrans.constraint.transform.rotation.w, COVAR_STR=COVAR_STR)
 
     def setPoseWithSubmapID(self, robotID, submapID, resultpose):
@@ -248,6 +248,7 @@ class InsubmapProcess:
         self.GMMmodel = None
         self.Octomap = None
         self.freezed = False
+        self.decriptor = None
 
     
     def insert_point(self, in_point_cloud, ifcheck = True):
@@ -287,6 +288,7 @@ class InsubmapProcess:
         self.filter_point() #把点云进行滤波
         self.freezed = True
         # TODO 讲道理应该用点云生成描述子
+        self.decriptor = np.array([self.submap_pose_odom.position.x, self.submap_pose_odom.position.y, self.submap_pose_odom.position.z, self.submap_pose_odom.orientation.x, self.submap_pose_odom.orientation.y, self.submap_pose_odom.orientation.z, self.submap_pose_odom.orientation.w ]) # 现在就是用 odom 的位置凑合一下
         tmp = 1
 
     def get_submap_pose_stamped(self):
@@ -335,7 +337,7 @@ class TrajMapBuilder:
 
         self.newsubmap_builder = None
         self.prefixsubmap_builder = None
-
+        
 
         # self.pose_pub = rospy.Publisher('pose', PoseStamped, queue_size=1)
         self.path_pub = rospy.Publisher('path', Path, queue_size=1)
@@ -345,11 +347,19 @@ class TrajMapBuilder:
         self.test_pc2_pub = rospy.Publisher('testpoints', PointCloud2,queue_size=1)
         self.self_pc_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_self_pointcloud,queue_size=1)
         self.new_self_submap_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_new_self_pointcloud,queue_size=1)
-        self.new_self_loop_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_add_sim_loop)
+        # self.new_self_loop_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_add_sim_loop)
 
         self.new_submap_listener = rospy.Subscriber('/all_submap', String, self.callback_submap_listener)
 
         self.transform_sub1_odom_br = tf2_ros.StaticTransformBroadcaster()
+
+        #下面主要是为了处理其他的机器人的submap
+        self.all_submap_lists = {}
+        self.all_submap_locks = {}
+        self.all_submap_lists['robot{}'.format(self.self_robot_id) ] = self.list_of_submap
+        self.all_submap_locks['robot{}'.format(self.self_robot_id) ] = threading.Lock()
+
+        self.match_thr = 0.5
 
         # self.backpubglobalpoint = threading.Thread(target=self.pointmap_single_thread)
         # self.backpubglobalpoint.setDaemon(True)
@@ -361,11 +371,74 @@ class TrajMapBuilder:
         self.backt.setDaemon(True)
         self.backt.start()
     
-    def callback_submap_listener(self, data):
+    def detect_match_candidate_onemap(self, inputsubmap, targetsubmap):
+        dist = np.linalg.norm(inputsubmap.decriptor[0:3] - targetsubmap.decriptor[0:3])
+        cosine_orient = np.dot(inputsubmap.decriptor[3:], targetsubmap.decriptor[3:].T)
+        return (1-cosine_orient)*dist
+
+    def detect_match_candidate_one_robot(self, inputsubmap, robotsubmaps):
+        result = []
+        for robotsubmap in robotsubmaps[:-10]: #过于临近的关键帧就不要匹配了费劲
+            result.append(self.detect_match_candidate_onemap(inputsubmap, robotsubmap) )
+        return np.array(result)
+
+    def detect_match_candidate_self(self, inputsubmap): # 如果输入的 是自己的 submap 需要和其他所有人detection
+        result = {}
+        for robotname in self.all_submap_lists.keys(): #遍历每个机器人的轨迹,找到可能的阈值
+            if robotname == "robot{}".format(self.self_robot_id): #寻找自己的回环
+                thisrobotsubmap = self.all_submap_lists[robotname]
+                result[robotname] = self.detect_match_candidate_one_robot(inputsubmap, thisrobotsubmap) 
+            if not (robotname == "robot{}".format(self.self_robot_id) ): #寻找自己的回环
+                thisrobotsubmap = self.all_submap_lists[robotname]
+                result[robotname] = self.detect_match_candidate_one_robot(inputsubmap, thisrobotsubmap) 
+        return result
+        
+    def submap_registration(self,inputsubmap,tosubmap): #输入两个子地图,输出两个地图的变换
+        #TODO 现在这个功能也没实现,意思意思,都认为直接是相同位置
+        T_to_input = TransformStamped()
+        T_to_input.transform.rotation.w = 1
+        return T_to_input
+
+    def submaps_to_constraint(self,inputsubmap,tosubmap): #输入两个子地图,直接构造成constraint
+        trans_tmp = self.submap_registration( inputsubmap, tosubmap )
+        result = ConstraintTransform(inputsubmap.robot_id, inputsubmap.submap_index, tosubmap.robot_id, inputsubmap.submap_index, trans_tmp ) #都是记录 from 是新的 to 是旧的
+        return result
+
+    def callback_submap_listener(self, data): #主要是为了处理回环,包括自己的回环和别人的回环  
         recvstr = data.data
         recvsubmap = pickle.loads(recvstr)
         print(recvsubmap.robot_id)
         print(recvsubmap.submap_index)
+        print(recvsubmap)
+        current_robot_id="robot{}".format(recvsubmap.robot_id)
+        if not self.all_submap_lists.has_key(current_robot_id): #如果听到的是全新的机器人,就新增一个
+            self.all_submap_locks[current_robot_id] = threading.Lock()
+            self.all_submap_lists[current_robot_id] = []
+        if not (current_robot_id == 'robot{}'.format(self.self_robot_id) ): #如果听到的不是自己机器人的地图,就保存下来(自己的地图已经保存过了)
+            self.all_submap_lists[current_robot_id].append(recvsubmap)
+        
+        if (current_robot_id == 'robot{}'.format(self.self_robot_id) ): #如果收到的是自己的submap,就去和包括自己在内的所有轨迹进行匹配
+            match = self.detect_match_candidate_self(recvsubmap)
+            for robotname in match.keys():
+                if robotname == "robot{}".format(self.self_robot_id): #寻找自己的回环
+                    print(match[robotname])
+                    match_valid = match[robotname] < self.match_thr
+                    print(match_valid)
+                    match_index = np.where(match_valid)
+                    print(match_index)
+                    # if len(match_valid) > 0: #说明有自身回环
+                    for valid_index in match_index[0]: #因为只有一个维度
+                        innerconstraint = self.submaps_to_constraint(recvsubmap, self.all_submap_lists[robotname][valid_index] )
+                        self.self_constraint.append(innerconstraint)
+                        self.new_self_loop = True
+
+                        
+                        
+
+
+            
+
+
 
     def refresh_ego_mapodom_tf(self): #这一帧,根据MAP和ODOM最近的submap,计算map和odom的偏差
         # import pdb; pdb.set_trace()
@@ -409,7 +482,7 @@ class TrajMapBuilder:
             T_first_cur.transform.rotation.w = 1
             new_constraint = ConstraintTransform(self.self_robot_id,self.newsubmap_builder.submap_index,self.self_robot_id,2,T_first_cur )
             self.self_constraint.append(new_constraint)
-            self.new_self_loop = True # 当设置为True说明有一个新的关键帧
+            self.new_self_loop = True # 当设置为 True 说明有一个新的关键帧
             tmp = 1
 
     def callback_self_pointcloud(self, data): #监听pointcloud,自己新建地图,并且保存对应的 odom.
