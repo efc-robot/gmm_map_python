@@ -32,3 +32,16 @@ roslaunch gmm_map_python visualgmm.launch
 ```
 rosbag play --clock --keep-alive 30sec.bag
 ```
+
+2021年更新:
+我们现在新建了全新 rosbag,在rosbag 中增加了命名空间.运行方法.
+
+```
+roslaunch gmm_map_python visualgmm_realsence.launch
+```
+
+注意,要先在 visualgmm_realsence.launch 中28,29 行设置rosbag的路径.
+
+rosbag 下载链接:
+
+[https://cloud.tsinghua.edu.cn/f/ecc82823171e4a0aa20f/?dl=1](https://cloud.tsinghua.edu.cn/f/ecc82823171e4a0aa20f/?dl=1)

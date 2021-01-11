@@ -269,6 +269,7 @@ class InsubmapProcess:
         return self.submap_point_clouds
 
     def model_gmm(self): #用GMM完成地图构建,第一个版本暂时不研究地图,只考虑轨迹合并
+        # TODO 直接用kmeans结果建
         self.GMMmodel = self.clf.fit(self.submap_point_clouds)
         return self.GMMmodel
 
