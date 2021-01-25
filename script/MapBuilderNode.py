@@ -20,7 +20,7 @@ import random
 import pickle
 # import octomap
 # from octomap_msgs.msg import Octomap
-
+from generate_descriptor import Descriptor
 import gtsam
 
 COVAR_STR = "1.000000 0.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000   1.000000 0.000000   1.000000"
@@ -249,8 +249,12 @@ class InsubmapProcess:
         self.Octomap = None
         self.freezed = False
         self.decriptor = None
+        self.Descriptor = Descriptor(model_dir='/home/xuzl/catkin_ws/src/gmm_map_python/script/model13.ckpt')
+        # load weights
+        #checkpoint = torch.load("model.ckpt")
+        #saved_state_dict = checkpoint['state_dict']
+        #self.Descriptor.model.load_state_dict(saved_state_dict)
 
-    
     def insert_point(self, in_point_cloud, ifcheck = True):
         print(in_point_cloud.header.frame_id)
         # assert( 'odom' == in_point_cloud.header.frame_id)
@@ -265,7 +269,7 @@ class InsubmapProcess:
 
     def filter_point(self):
         #要删除重复的点云
-        self.submap_point_clouds = voxel_filter(self.submap_point_clouds,0.1,"centroid")
+        self.submap_point_clouds = voxel_filter(self.submap_point_clouds,0.05,"centroid")
         return self.submap_point_clouds
 
     def model_gmm(self): #用GMM完成地图构建,第一个版本暂时不研究地图,只考虑轨迹合并
@@ -289,7 +293,15 @@ class InsubmapProcess:
         self.filter_point() #把点云进行滤波
         self.freezed = True
         # TODO 讲道理应该用点云生成描述子
-        self.decriptor = np.array([self.submap_pose_odom.position.x, self.submap_pose_odom.position.y, self.submap_pose_odom.position.z, self.submap_pose_odom.orientation.x, self.submap_pose_odom.orientation.y, self.submap_pose_odom.orientation.z, self.submap_pose_odom.orientation.w ]) # 现在就是用 odom 的位置凑合一下
+        # use self.submap_point_clouds to extract
+        # self.decriptor = np.array([self.submap_pose_odom.position.x, self.submap_pose_odom.position.y, self.submap_pose_odom.position.z, self.submap_pose_odom.orientation.x, self.submap_pose_odom.orientation.y, self.submap_pose_odom.orientation.z, self.submap_pose_odom.orientation.w ]) # 现在就是用 odom 的位置凑合一下
+        #np.savetxt('/home/xuzl/catkin_ws/src/gmm_map_python/script/pc.txt', self.submap_point_clouds)
+        #print('point cloud saved.')
+        self.Descriptor.point_cloud = self.submap_point_clouds.copy()
+        self.Descriptor.filter()
+        self.descriptor = self.Descriptor.generate_descriptor()
+        # normalize
+        self.descriptor = self.descriptor / (np.linalg.norm(self.descriptor))
         tmp = 1
 
     def get_submap_pose_stamped(self):
@@ -360,7 +372,7 @@ class TrajMapBuilder:
         self.all_submap_lists['robot{}'.format(self.self_robot_id) ] = self.list_of_submap
         self.all_submap_locks['robot{}'.format(self.self_robot_id) ] = threading.Lock()
 
-        self.match_thr = 0.5
+        self.match_thr = 0.35
 
         # self.backpubglobalpoint = threading.Thread(target=self.pointmap_single_thread)
         # self.backpubglobalpoint.setDaemon(True)
@@ -371,11 +383,16 @@ class TrajMapBuilder:
         self.backt = threading.Thread(target=self.BackendThread)
         self.backt.setDaemon(True)
         self.backt.start()
+
+
     
     def detect_match_candidate_onemap(self, inputsubmap, targetsubmap):
-        dist = np.linalg.norm(inputsubmap.decriptor[0:3] - targetsubmap.decriptor[0:3])
-        cosine_orient = np.dot(inputsubmap.decriptor[3:], targetsubmap.decriptor[3:].T)
-        return (1-cosine_orient)*dist
+        # TODO shency fix 
+        # dist = np.linalg.norm(inputsubmap.decriptor[0:3] - targetsubmap.decriptor[0:3])
+        # cosine_orient = np.dot(inputsubmap.decriptor[3:], targetsubmap.decriptor[3:].T)
+        cosine_orient = np.dot(inputsubmap.descriptor, targetsubmap.descriptor.T)
+        print('cosine dist: {}'.format(cosine_orient))
+        return (1-cosine_orient)
 
     def detect_match_candidate_one_robot(self, inputsubmap, robotsubmaps):
         result = []
