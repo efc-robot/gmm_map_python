@@ -397,7 +397,9 @@ class TrajMapBuilder:
     def submap_registration(self,inputsubmap,tosubmap): #输入两个子地图,输出两个地图的变换
         #TODO 现在这个功能也没实现,意思意思,都认为直接是相同位置
         T_to_input = TransformStamped()
+        # T_to_input.transform.translation.z = 1
         T_to_input.transform.rotation.w = 1
+        print T_to_input
         return T_to_input
 
     def submaps_to_constraint(self,inputsubmap,tosubmap): #输入两个子地图,直接构造成constraint
