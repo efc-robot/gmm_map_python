@@ -68,7 +68,7 @@ class NetVLADLoupe(nn.Module):
         vlad = vlad - a
 
         vlad = F.normalize(vlad, dim=1, p=2)
-        vlad = vlad.view((-1, self.cluster_size * self.feature_size))
+        vlad = vlad.contiguous().view((-1, self.cluster_size * self.feature_size))
         vlad = F.normalize(vlad, dim=1, p=2)
 
         vlad = torch.matmul(vlad, self.hidden1_weights)
