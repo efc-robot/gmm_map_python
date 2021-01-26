@@ -1,5 +1,6 @@
 import numpy as np
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
 from torch.autograd import Variable
 from torch.backends import cudnn
@@ -18,6 +19,7 @@ class Descriptor:
         self.model = PNV.PointNetVlad(global_feat=True, feature_transform=True,\
             max_pool=False, output_dim=cfg.FEATURE_OUTPUT_DIM, num_points=cfg.NUM_POINTS)
         self.model.to(device)
+        print(device)
         self.point_cloud = point_cloud
         self.point_num = point_num
         self.filtered_pc = None

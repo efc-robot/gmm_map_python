@@ -237,7 +237,7 @@ class ConstraintTransform:
 
 
 class InsubmapProcess:
-    def __init__(self, submap_index, robot_id, init_pose_odom, init_pose_map, add_time=None ):
+    def __init__(self, submap_index, robot_id, init_pose_odom, init_pose_map, Descriptor, add_time=None ):
         self.submap_index = submap_index
         self.robot_id = robot_id
         self.submap_pose_odom = init_pose_odom #相比于odom坐标系的位姿(介入odom),一旦输入就不会改变
@@ -249,7 +249,7 @@ class InsubmapProcess:
         self.Octomap = None
         self.freezed = False
         self.decriptor = None
-        self.Descriptor = Descriptor(model_dir='/home/xuzl/catkin_ws/src/gmm_map_python/script/model13.ckpt')
+        self.Descriptor = Descriptor
         # load weights
         #checkpoint = torch.load("model.ckpt")
         #saved_state_dict = checkpoint['state_dict']
@@ -377,7 +377,7 @@ class TrajMapBuilder:
         # self.backpubglobalpoint = threading.Thread(target=self.pointmap_single_thread)
         # self.backpubglobalpoint.setDaemon(True)
         # self.backpubglobalpoint.start()
-
+        self.Descriptor = Descriptor(model_dir='/home/xuzl/catkin_ws/src/gmm_map_python/script/model13.ckpt')
         self.transform_firstsubmap_odom = None
 
         self.backt = threading.Thread(target=self.BackendThread)
@@ -528,7 +528,7 @@ class TrajMapBuilder:
             self.prefixsubmap_builder = self.newsubmap_builder
 
                 # self.con
-            self.newsubmap_builder = InsubmapProcess( self.current_submap_id, self.self_robot_id, trans2pose(transform_odom_base.transform), trans2pose(transform_odom_base.transform), pointtime )
+            self.newsubmap_builder = InsubmapProcess( self.current_submap_id, self.self_robot_id, trans2pose(transform_odom_base.transform), trans2pose(transform_odom_base.transform), self.Descriptor, pointtime )
             baselink_pointcloud.header.frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
             self.newsubmap_builder.insert_point(baselink_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
 
@@ -619,7 +619,7 @@ class TrajMapBuilder:
 
     def pointmap_merge_single(self): #将每一帧的点云都合并在一起可视化出来
         # final_result = PointCloud2()
-        tmpmap_builder = InsubmapProcess(0,0,Pose(),Pose())
+        tmpmap_builder = InsubmapProcess(0,0,Pose(),Pose(),self.Descriptor)
         # if (len(self.list_of_submap) <= 1):
         #     return 
         for submapinst in self.list_of_submap:
