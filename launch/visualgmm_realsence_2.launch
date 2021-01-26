@@ -11,8 +11,8 @@
 <!-- <node pkg="gmm_map_python" name="talker" type="gmm_transform.py" output="screen" required="true"/> -->
 <!-- <node pkg="gmm_map_python" name="visualgmm" type="visualgmm.py" output="screen" required="true"/> -->
 
-<group ns="robot1">
-<arg name="robot_name" default="robot1"/>
+<group ns="robot2">
+<arg name="robot_name" default="robot2"/>
 
 <node pkg="gmm_map_python" name="Downsample" type="DownSampleNode" output="log" required="true">
         <remap from="Downsample/points" to="d400/depth/color/points"/>
@@ -25,7 +25,7 @@
         <param name="map_frame" value="$(arg robot_name)/map"/>
 </node>
 
-<node pkg="rosbag" type="play" name="recordplay" args="--clock /home/xuzhl/dataset/realsence_t265/output_robot1.bag" required="false">
+<node pkg="rosbag" type="play" name="recordplay" args="--clock /home/xuzhl/dataset/realsence_t265/output_robot2.bag" required="false">
 </node> 
 
 <node pkg="rviz" name="rvizview" type="rviz" output="screen" args="-d $(find gmm_map_python)/rviz/$(arg robot_name).rviz" required="false"/>

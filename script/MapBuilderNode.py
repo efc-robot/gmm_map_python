@@ -21,6 +21,7 @@ import pickle
 # import octomap
 # from octomap_msgs.msg import Octomap
 from generate_descriptor import Descriptor
+from map_registration import Registrar
 import gtsam
 
 COVAR_STR = "1.000000 0.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000   1.000000 0.000000   1.000000"
@@ -249,7 +250,11 @@ class InsubmapProcess:
         self.Octomap = None
         self.freezed = False
         self.decriptor = None
+<<<<<<< HEAD
         self.Descriptor = Descriptor
+=======
+        self.Descriptor = Descriptor(model_dir='/home/xuzhl/catkin_ws/src/gmm_map_python/script/model13.ckpt')
+>>>>>>> bd835e57548a7d52cc291002124b64186759b940
         # load weights
         #checkpoint = torch.load("model.ckpt")
         #saved_state_dict = checkpoint['state_dict']
@@ -330,6 +335,8 @@ class TrajMapBuilder:
         self.tf_listener = tf.TransformListener()
         self.tf2_buffer = tf2_ros.Buffer()
         self.tf2_listener = tf2_ros.TransformListener(self.tf2_buffer)
+
+        self.registrar = Registrar()
 
         self.current_submap_id = 0
         self.list_of_submap = []
@@ -412,9 +419,10 @@ class TrajMapBuilder:
         return result
         
     def submap_registration(self,inputsubmap,tosubmap): #输入两个子地图,输出两个地图的变换
-        #TODO 现在这个功能也没实现,意思意思,都认为直接是相同位置
-        T_to_input = TransformStamped()
-        T_to_input.transform.rotation.w = 1
+        T_to_input = self.registrar.registration2(inputsubmap.submap_point_clouds, tosubmap.submap_point_clouds)
+        # T_to_input.transform.translation.z = 1
+        # T_to_input.transform.rotation.w = 1
+        print T_to_input
         return T_to_input
 
     def submaps_to_constraint(self,inputsubmap,tosubmap): #输入两个子地图,直接构造成constraint

@@ -31,7 +31,7 @@ class Descriptor:
         #self.filter()
     def filter(self):
         print("point_cloud: {}\n".format(self.point_cloud.shape[0]))
-        idx = np.random.choice(self.point_cloud.shape[0], self.point_num, replace=False)
+        idx = np.random.choice(self.point_cloud.shape[0], self.point_num, replace=True)
         self.filtered_pc = self.point_cloud[idx, :]
         mean = np.mean(self.filtered_pc, axis=0)
         mean = mean[np.newaxis, :]
@@ -70,7 +70,7 @@ class Descriptor:
         self.model.eval()
         with torch.no_grad():
             model_out = self.model(model_in)
-        return model_out
+        return model_out.cpu()
             
 
 if __name__ == '__main__':
