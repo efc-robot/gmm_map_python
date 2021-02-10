@@ -1,5 +1,5 @@
 <launch>
-
+<arg name="play_bag" default="true"/>
 <param name="/use_sim_time" value="true" />
 
 <!-- <node pkg="tf" type="static_transform_publisher" name="link1_broadcaster" args="0 0 0 0 0 0 1 map odom 100" />
@@ -23,15 +23,14 @@
         <param name="baselink_frame" value="$(arg robot_name)/t265_link"/>
         <param name="odom_frame" value="$(arg robot_name)/t265_odom_frame"/>
         <param name="map_frame" value="$(arg robot_name)/map"/>
+        <param name="robot_id" value="1"/>
 </node>
-
-<node pkg="rosbag" type="play" name="recordplay" args="--clock /home/xuzhl/dataset/realsence_t265/output_robot1.bag" required="false">
-</node> 
 
 <node pkg="rviz" name="rvizview" type="rviz" output="screen" args="-d $(find gmm_map_python)/rviz/$(arg robot_name).rviz" required="false"/>
 
 </group>
 
-
+<node if="$(arg play_bag)" pkg="rosbag" type="play" name="recordplay_1" args="--clock /home/xuzhl/dataset/realsence_t265/output_robot1_notime.bag" required="false">
+</node> 
 
 </launch>

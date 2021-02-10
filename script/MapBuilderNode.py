@@ -22,7 +22,10 @@ import pickle
 # from octomap_msgs.msg import Octomap
 from generate_descriptor import Descriptor
 from map_registration import Registrar
+from TFGraph import TFGraph
 import gtsam
+import copy
+import pygraph
 
 COVAR_STR = "1.000000 0.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000   1.000000 0.000000   1.000000"
 
@@ -137,10 +140,18 @@ def voxel_filter(point_cloud, leaf_size,filter_mode):
 
 
 class ConstrOptimizer:
-    def __init__(self, robot_id, pose_map, constr, newsubmap_builder, g2ofname):
+    def __init__(self, robot_id, all_pose_map_lists, all_self_constr_lists, inter_constr_list, tf_graph, newsubmap_builder, g2ofname):
         self.robot_id = robot_id
-        self.pose_map = pose_map
-        self.constr = constr
+        self.tf_graph = tf_graph
+        connected_robots = self.tf_graph.get_connected_robots(self.robot_id)
+        self.pose_map = []
+        self.constr = []
+        for cons in inter_constr_list:
+            if (cons.from_robot in connected_robots) and (cons.to_robot in connected_robots):
+                self.constr.append(cons)
+        for robot_id in connected_robots:
+            self.pose_map += all_pose_map_lists["robot{}".format(robot_id)]
+            self.constr += all_self_constr_lists["robot{}".format(robot_id)]
         self.g2ofname = g2ofname
         self.newsubmap_builder = newsubmap_builder
 
@@ -156,16 +167,28 @@ class ConstrOptimizer:
             openmethod = "w"
         with open(g2ofname, openmethod) as g2ofile:
             for VERTEXpose in pose_array:
-                vertexID = robotID2poseID(self.robot_id, VERTEXpose.submap_index)
-
-                print >> g2ofile, "VERTEX_SE3:QUAT {pointID} {tx} {ty} {tz} {rx} {ry} {rz} {rw}".format(pointID=vertexID,tx=VERTEXpose.submap_pose.position.x,ty=VERTEXpose.submap_pose.position.y,tz=VERTEXpose.submap_pose.position.z, 
-                    rx = VERTEXpose.submap_pose.orientation.x, ry = VERTEXpose.submap_pose.orientation.y, rz = VERTEXpose.submap_pose.orientation.z, rw = VERTEXpose.submap_pose.orientation.w)
+                if VERTEXpose.robot_id != self.robot_id:
+                    pose_local = pose2Rigidtrans(VERTEXpose.submap_pose, 'submap_base_link_{}'.format(VERTEXpose.submap_index), 'robot{}/map'.format(VERTEXpose.robot_id))
+                    # print VERTEXpose.robot_id
+                    # print self.robot_id
+                    # print pose_local
+                    # print self.tf_graph.get_tf(VERTEXpose.robot_id, self.robot_id)
+                    pose_global = self.tf_graph.get_tf(VERTEXpose.robot_id, self.robot_id) * pose_local
+                    pose_global = trans2pose(Rigidtrans2transstamped(pose_global).transform)
+                else:
+                    pose_global = VERTEXpose.submap_pose
+                vertexID = robotID2poseID(VERTEXpose.robot_id, VERTEXpose.submap_index)
+                # print vertexID
+                print >> g2ofile, "VERTEX_SE3:QUAT {pointID} {tx} {ty} {tz} {rx} {ry} {rz} {rw}".format(pointID = vertexID,
+                    tx = pose_global.position.x, ty = pose_global.position.y, tz = pose_global.position.z, 
+                    rx = pose_global.orientation.x, ry = pose_global.orientation.y, rz = pose_global.orientation.z, rw = pose_global.orientation.w)
 
     def AddConstr2g2oEdge(self, g2ofname, constr):
         with open(g2ofname, "a") as g2ofile:
             for EDGEtrans in constr:
                 id1 = robotID2poseID(EDGEtrans.to_robot, EDGEtrans.to_index)
                 id2 = robotID2poseID(EDGEtrans.from_robot,EDGEtrans.from_index)
+                # print '{} {}'.format(id1, id2)
                 print >> g2ofile, "EDGE_SE3:QUAT {id1} {id2} {tx} {ty} {tz} {rx} {ry} {rz} {rw}  {COVAR_STR}".format(id1=id1,id2=id2, tx =EDGEtrans.constraint.transform.translation.x , ty =EDGEtrans.constraint.transform.translation.y , tz =EDGEtrans.constraint.transform.translation.z, rx =EDGEtrans.constraint.transform.rotation.x, ry =EDGEtrans.constraint.transform.rotation.y, rz =EDGEtrans.constraint.transform.rotation.z, rw =EDGEtrans.constraint.transform.rotation.w, COVAR_STR=COVAR_STR)
 
     def setPoseWithSubmapID(self, robotID, submapID, resultpose):
@@ -173,7 +196,9 @@ class ConstrOptimizer:
             map_robotID = cursubmap.robot_id
             map_submapID = cursubmap.submap_index
             if map_robotID == robotID and map_submapID == submapID:
-                tmpRigit = RigidTransform(resultpose.rotation().quaternion(), resultpose.translation().vector())
+                tmpRigit = RigidTransform(resultpose.rotation().quaternion(), resultpose.translation().vector(), from_frame = 'submap_base_link_{}'.format(submapID), to_frame = 'robot{}/map'.format(self.robot_id))
+                if robotID != self.robot_id:
+                    tmpRigit = self.tf_graph.get_tf(self.robot_id, robotID) * tmpRigit
                 cursubmap.submap_pose =  trans2pose(Rigidtrans2transstamped(tmpRigit).transform)
 
     def setNowPosWithSubmapID(self, robotID, submapID, resultpose):
@@ -214,7 +239,9 @@ class ConstrOptimizer:
 
 
     def constructproblem(self):
+        # print "w"
         self.Posemap2g2oVertex(self.g2ofname, self.pose_map)
+        # print "a"
         self.Posemap2g2oVertex(self.g2ofname, [self.newsubmap_builder], add=True)
         self.AddConstr2g2oEdge(self.g2ofname, self.constr)
         self.gtsamOpt2Pose(self.g2ofname)
@@ -236,6 +263,10 @@ class ConstraintTransform:
         self.to_index = to_index
         self.constraint = trans_constr
 
+    def show(self):
+        print 'to  :{} {}'.format(self.to_robot, self.to_index) + ' from:{} {}'.format(self.from_robot, self.from_index)
+        # print 'from:{} {}'.format(self.from_robot, self.from_index)
+        # print 'tf  :{}'.format(self.constraint)
 
 class InsubmapProcess:
     def __init__(self, submap_index, robot_id, init_pose_odom, init_pose_map, Descriptor, add_time=None ):
@@ -250,11 +281,7 @@ class InsubmapProcess:
         self.Octomap = None
         self.freezed = False
         self.decriptor = None
-<<<<<<< HEAD
         self.Descriptor = Descriptor
-=======
-        self.Descriptor = Descriptor(model_dir='/home/xuzhl/catkin_ws/src/gmm_map_python/script/model13.ckpt')
->>>>>>> bd835e57548a7d52cc291002124b64186759b940
         # load weights
         #checkpoint = torch.load("model.ckpt")
         #saved_state_dict = checkpoint['state_dict']
@@ -358,6 +385,7 @@ class TrajMapBuilder:
         self.newsubmap_builder = None
         self.prefixsubmap_builder = None
         
+        self.Descriptor = Descriptor(model_dir='/home/xuzhl/catkin_ws/src/gmm_map_python/script/model13.ckpt')
 
         # self.pose_pub = rospy.Publisher('pose', PoseStamped, queue_size=1)
         self.path_pub = rospy.Publisher('path', Path, queue_size=1)
@@ -376,15 +404,23 @@ class TrajMapBuilder:
         #下面主要是为了处理其他的机器人的submap
         self.all_submap_lists = {}
         self.all_submap_locks = {}
-        self.all_submap_lists['robot{}'.format(self.self_robot_id) ] = self.list_of_submap
-        self.all_submap_locks['robot{}'.format(self.self_robot_id) ] = threading.Lock()
+        self.all_submap_lists['robot{}'.format(self.self_robot_id)] = self.list_of_submap
+        self.all_submap_locks['robot{}'.format(self.self_robot_id)] = threading.Lock()
+        
+        self.all_self_constraint_lists = {} #优化的单个机器人内部约束的
+        self.all_self_constraint_lists['robot{}'.format(self.self_robot_id)] = self.self_constraint
+        self.inter_constraint_list = [] #优化的机器人之间约束的
+        self.br_inter_robot = tf.TransformBroadcaster()
+
+        self.tf_graph = TFGraph()
+        self.tf_graph.new_tf_node(self.self_robot_id)
 
         self.match_thr = 0.35
 
         # self.backpubglobalpoint = threading.Thread(target=self.pointmap_single_thread)
         # self.backpubglobalpoint.setDaemon(True)
         # self.backpubglobalpoint.start()
-        self.Descriptor = Descriptor(model_dir='/home/xuzl/catkin_ws/src/gmm_map_python/script/model13.ckpt')
+        
         self.transform_firstsubmap_odom = None
 
         self.backt = threading.Thread(target=self.BackendThread)
@@ -398,22 +434,22 @@ class TrajMapBuilder:
         # dist = np.linalg.norm(inputsubmap.decriptor[0:3] - targetsubmap.decriptor[0:3])
         # cosine_orient = np.dot(inputsubmap.decriptor[3:], targetsubmap.decriptor[3:].T)
         cosine_orient = np.dot(inputsubmap.descriptor, targetsubmap.descriptor.T)
-        print('cosine dist: {}'.format(cosine_orient))
+        # print('cosine dist: {}'.format(cosine_orient))
         return (1-cosine_orient)
 
     def detect_match_candidate_one_robot(self, inputsubmap, robotsubmaps):
         result = []
-        for robotsubmap in robotsubmaps[:-10]: #过于临近的关键帧就不要匹配了费劲
+        for robotsubmap in robotsubmaps:
             result.append(self.detect_match_candidate_onemap(inputsubmap, robotsubmap) )
         return np.array(result)
 
-    def detect_match_candidate_self(self, inputsubmap): # 如果输入的 是自己的 submap 需要和其他所有人detection
+    def detect_match_candidate(self, inputsubmap): # 如果输入的 是自己的 submap 需要和其他所有人detection
         result = {}
         for robotname in self.all_submap_lists.keys(): #遍历每个机器人的轨迹,找到可能的阈值
-            if robotname == "robot{}".format(self.self_robot_id): #寻找自己的回环
+            if robotname == "robot{}".format(inputsubmap.robot_id): #寻找自己的回环
                 thisrobotsubmap = self.all_submap_lists[robotname]
-                result[robotname] = self.detect_match_candidate_one_robot(inputsubmap, thisrobotsubmap) 
-            if not (robotname == "robot{}".format(self.self_robot_id) ): #寻找自己的回环
+                result[robotname] = self.detect_match_candidate_one_robot(inputsubmap, thisrobotsubmap[:-10])  #过于临近的关键帧就不要匹配了费劲
+            if robotname != "robot{}".format(inputsubmap.robot_id): #寻找自己other的回环
                 thisrobotsubmap = self.all_submap_lists[robotname]
                 result[robotname] = self.detect_match_candidate_one_robot(inputsubmap, thisrobotsubmap) 
         return result
@@ -422,41 +458,83 @@ class TrajMapBuilder:
         T_to_input = self.registrar.registration2(inputsubmap.submap_point_clouds, tosubmap.submap_point_clouds)
         # T_to_input.transform.translation.z = 1
         # T_to_input.transform.rotation.w = 1
-        print T_to_input
+        T_to_input.header.frame_id = 'submap_base_link_{}'.format(tosubmap.submap_index)
+        T_to_input.child_frame_id = 'submap_base_link_{}'.format(inputsubmap.submap_index)
+        # print T_to_input
         return T_to_input
 
     def submaps_to_constraint(self,inputsubmap,tosubmap): #输入两个子地图,直接构造成constraint
         trans_tmp = self.submap_registration( inputsubmap, tosubmap )
-        result = ConstraintTransform(inputsubmap.robot_id, inputsubmap.submap_index, tosubmap.robot_id, inputsubmap.submap_index, trans_tmp ) #都是记录 from 是新的 to 是旧的
+        result = ConstraintTransform(inputsubmap.robot_id, inputsubmap.submap_index, tosubmap.robot_id, tosubmap.submap_index, trans_tmp ) #都是记录 from 是新的 to 是旧的
         return result
 
     def callback_submap_listener(self, data): #主要是为了处理回环,包括自己的回环和别人的回环  
         recvstr = data.data
         recvsubmap = pickle.loads(recvstr)
-        print(recvsubmap.robot_id)
-        print(recvsubmap.submap_index)
-        print(recvsubmap)
+        # print(recvsubmap.robot_id)
+        # print(recvsubmap.submap_index)
+        # print(recvsubmap)
         current_robot_id="robot{}".format(recvsubmap.robot_id)
         if not self.all_submap_lists.has_key(current_robot_id): #如果听到的是全新的机器人,就新增一个
             self.all_submap_locks[current_robot_id] = threading.Lock()
             self.all_submap_lists[current_robot_id] = []
+            self.all_self_constraint_lists[current_robot_id] = []
+            self.tf_graph.new_tf_node(recvsubmap.robot_id)
+            print pygraph.graph_to_dot(self.tf_graph)
         if not (current_robot_id == 'robot{}'.format(self.self_robot_id) ): #如果听到的不是自己机器人的地图,就保存下来(自己的地图已经保存过了)
+            # 计算和前一帧的 constraint
+            self.all_submap_locks[current_robot_id].acquire()
+            if len(self.all_submap_lists[current_robot_id]) != 0:
+                cur_odom_base = pose2Rigidtrans(recvsubmap.submap_pose_odom, 'submap_base_link_{}'.format(recvsubmap.submap_index), 'robot{}/odom'.format(recvsubmap.robot_id))
+                pre_odom_base = pose2Rigidtrans(self.all_submap_lists[current_robot_id][-1].submap_pose_odom, 'submap_base_link_{}'.format(self.all_submap_lists[current_robot_id][-1].submap_index), 'robot{}/odom'.format(recvsubmap.robot_id))                
+                Tmsg_pre_cur = pre_odom_base.inverse()*cur_odom_base #计算from当前 to 上一帧
+                T_pre_cur = Rigidtrans2transstamped(Tmsg_pre_cur)
+                new_constraint = ConstraintTransform(recvsubmap.robot_id,recvsubmap.submap_index,recvsubmap.robot_id, self.all_submap_lists[current_robot_id][-1].submap_index, T_pre_cur)
+                self.all_self_constraint_lists[current_robot_id].append(new_constraint)
+
             self.all_submap_lists[current_robot_id].append(recvsubmap)
+            self.all_submap_locks[current_robot_id].release()
         
-        if (current_robot_id == 'robot{}'.format(self.self_robot_id) ): #如果收到的是自己的submap,就去和包括自己在内的所有轨迹进行匹配
-            match = self.detect_match_candidate_self(recvsubmap)
-            for robotname in match.keys():
-                if robotname == "robot{}".format(self.self_robot_id): #寻找自己的回环
-                    print(match[robotname])
-                    match_valid = match[robotname] < self.match_thr
-                    print(match_valid)
-                    match_index = np.where(match_valid)
-                    print(match_index)
-                    # if len(match_valid) > 0: #说明有自身回环
-                    for valid_index in match_index[0]: #因为只有一个维度
-                        innerconstraint = self.submaps_to_constraint(recvsubmap, self.all_submap_lists[robotname][valid_index] )
-                        self.self_constraint.append(innerconstraint)
-                        self.new_self_loop = True
+        # if (current_robot_id == 'robot{}'.format(self.self_robot_id) ): #如果收到的是自己的submap,就去和包括自己在内的所有轨迹进行匹配
+        match = self.detect_match_candidate(recvsubmap)
+        for robotname in match.keys():
+            if robotname == current_robot_id: #寻找自己的回环
+                # print(match[robotname])
+                match_valid = match[robotname] < self.match_thr
+                # print(match_valid)
+                match_index = np.where(match_valid)
+                print('match_index[0]:' + str(match_index[0]))
+                # if len(match_valid) > 0: #说明有自身回环
+                for valid_index in match_index[0]: #因为只有一个维度
+                    innerconstraint = self.submaps_to_constraint(recvsubmap, self.all_submap_lists[robotname][valid_index] )
+                    self.all_self_constraint_lists[current_robot_id].append(innerconstraint)
+                    self.new_self_loop = True
+            else: #寻找机器人之间的约束
+                # print(match[robotname])
+                match_valid = match[robotname] < self.match_thr
+                # print(match_valid)
+                match_index = np.where(match_valid)
+                print('match_index[0]:' + str(match_index[0]))
+                # if len(match_valid[0]) > 0: #说明有约束 
+                for valid_index in match_index[0]: #因为只有一个维度
+                    innerconstraint = self.submaps_to_constraint(recvsubmap, self.all_submap_lists[robotname][valid_index] )
+                    # innerconstraint.show()
+                    self.inter_constraint_list.append(innerconstraint)
+
+                    match_set = None
+                    curr_set = None
+                    if self.tf_graph.get_tf(innerconstraint.from_robot, innerconstraint.to_robot) == None:
+                        curr_map_base = pose2Rigidtrans(recvsubmap.submap_pose, 'submap_base_link_{}'.format(recvsubmap.submap_index), 'robot{}/map'.format(recvsubmap.robot_id))
+                        match_map_base = pose2Rigidtrans(self.all_submap_lists[robotname][valid_index].submap_pose, 'submap_base_link_{}'.format(self.all_submap_lists[robotname][valid_index].submap_index), 'robot{}/map'.format(innerconstraint.to_robot))
+                        inter_map_cons = match_map_base * transstamp2Rigidtrans(innerconstraint.constraint) * curr_map_base.inverse()
+                        self.tf_graph.new_tf_edge(innerconstraint.from_robot, innerconstraint.to_robot, inter_map_cons)
+                        print pygraph.graph_to_dot(self.tf_graph)
+                        # transresult = Rigidtrans2transstamped(inter_map_cons)
+                        # transresult.header.stamp = rospy.Time.now()
+                        # print transresult
+                        # self.br_inter_robot.sendTransformMessage(transresult)
+
+                    self.new_self_loop = True
 
                         
                         
@@ -487,10 +565,18 @@ class TrajMapBuilder:
             time.sleep(2)
             print("BackendOpt..........running")
             if self.new_self_loop: #只有找到新的loop才进行后端优化
+                # for cons in self.inter_constraint_list:
+                #     cons.show()
                 assert(len(self.self_constraint) > 0)
-                self.new_self_loop = False                  
-                consopt = ConstrOptimizer(self.self_robot_id,self.list_of_submap,self.self_constraint, self.newsubmap_builder ,'/tmp/testg2o')
+                self.new_self_loop = False
+
+                for lock in self.all_submap_locks.values():
+                    lock.acquire()
+                consopt = ConstrOptimizer(self.self_robot_id, self.all_submap_lists, self.all_self_constraint_lists, self.inter_constraint_list, self.tf_graph, self.newsubmap_builder, '/tmp/testg2o_{}'.format(self.self_robot_id))
                 consopt.constructproblem()
+                for lock in self.all_submap_locks.values():
+                    lock.release()
+
                 self.refresh_ego_mapodom_tf()
 
     def callback_new_self_pointcloud(self, data): #这个函数负责确定何时开始一个新的关键帧率,目前只是用来调试
@@ -532,17 +618,20 @@ class TrajMapBuilder:
         self.tf_listener.waitForTransform(self.odom_frame,self.baselink_frame,pointtime,rospy.Duration(0.11))
         transform_odom_base = self.tf2_buffer.lookup_transform(self.odom_frame,self.baselink_frame, pointtime) #得到了 baselink 在odom 坐标系中的位置
         if self.new_self_submap: #说明要增加一个新的关键帧
-            print("self.new_self_submap")
+            self.all_submap_locks['robot{}'.format(self.self_robot_id)].acquire()
+
             self.prefixsubmap_builder = self.newsubmap_builder
 
-                # self.con
+            # self.con
             self.newsubmap_builder = InsubmapProcess( self.current_submap_id, self.self_robot_id, trans2pose(transform_odom_base.transform), trans2pose(transform_odom_base.transform), self.Descriptor, pointtime )
             baselink_pointcloud.header.frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
+            print("self.new_self_submap_{}".format(self.newsubmap_builder.submap_index))
             self.newsubmap_builder.insert_point(baselink_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
 
             if not (self.prefixsubmap_builder == None): #如果不是第一帧,就需要把之前的帧给保存下来
                 self.prefixsubmap_builder.gen_descriptor_pntcld() #生成对应的描述子(基于点云生成)
                 self.list_of_submap.append(self.prefixsubmap_builder) #保存之前的submap
+                print("save_self_submap_{}".format(self.prefixsubmap_builder.submap_index))
                 # 计算和前一帧的 constraint
                 cur_odom_base = transstamp2Rigidtrans(transform_odom_base)
                 pre_odom_base = pose2Rigidtrans(self.prefixsubmap_builder.submap_pose_odom , 'submap_base_link_{}'.format(self.prefixsubmap_builder.submap_index) ,self.odom_frame)                
@@ -553,13 +642,15 @@ class TrajMapBuilder:
                 new_constraint = ConstraintTransform(self.self_robot_id,self.current_submap_id,self.self_robot_id,self.prefixsubmap_builder.submap_index,T_pre_cur )
                 self.self_constraint.append(new_constraint)
                 
-                new_pose_map = pose2Rigidtrans(self.prefixsubmap_builder.submap_pose,  'submap_base_link_{}'.format(self.prefixsubmap_builder.submap_index), "map"  )*Tmsg_pre_cur #odompose直接读取,但是map pose 需要累加计算.
+                new_pose_map = pose2Rigidtrans(self.prefixsubmap_builder.submap_pose,  'submap_base_link_{}'.format(self.prefixsubmap_builder.submap_index), self.map_frame  )*Tmsg_pre_cur #odompose直接读取,但是map pose 需要累加计算.
 
                 self.newsubmap_builder.submap_pose = trans2pose(Rigidtrans2transstamped(new_pose_map).transform)
 
                 pubsubmap = pickle.dumps(self.prefixsubmap_builder)
                 self.submap_publisher.publish(pubsubmap) #将已经建好的submap广播出去
                 tmp = 1
+            
+            self.all_submap_locks['robot{}'.format(self.self_robot_id)].release()
 
 
             self.current_submap_id+=1 #下一个关键帧ID增加
@@ -649,7 +740,7 @@ class TrajMapBuilder:
 
 def main():
     rospy.init_node('pcl_listener', anonymous=True)
-    Robot1 = TrajMapBuilder(1)
+    Robot1 = TrajMapBuilder(rospy.get_param('~robot_id',1))
     rospy.spin()
 
 if __name__ == "__main__":

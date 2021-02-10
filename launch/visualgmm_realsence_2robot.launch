@@ -1,0 +1,16 @@
+<launch>
+
+<param name="/use_sim_time" value="true" />
+
+<include file="$(find gmm_map_python)/launch/visualgmm_realsence.launch">
+    <arg name="play_bag" value="false" />
+</include>
+
+<include file="$(find gmm_map_python)/launch/visualgmm_realsence_2.launch">
+    <arg name="play_bag" value="false" />
+</include>
+
+<node pkg="rosbag" type="play" name="recordplay_2" args="--clock /home/xuzhl/dataset/realsence_t265/output_robot1_notime.bag /home/xuzhl/dataset/realsence_t265/output_robot2_notime.bag" required="false">
+</node>
+
+</launch>
