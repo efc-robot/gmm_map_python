@@ -280,7 +280,7 @@ class InsubmapProcess:
         self.GMMmodel = None
         self.Octomap = None
         self.freezed = False
-        self.decriptor = None
+        self.descriptor = None
         self.Descriptor = Descriptor
         # load weights
         #checkpoint = torch.load("model.ckpt")
@@ -326,7 +326,7 @@ class InsubmapProcess:
         self.freezed = True
         # TODO 讲道理应该用点云生成描述子
         # use self.submap_point_clouds to extract
-        # self.decriptor = np.array([self.submap_pose_odom.position.x, self.submap_pose_odom.position.y, self.submap_pose_odom.position.z, self.submap_pose_odom.orientation.x, self.submap_pose_odom.orientation.y, self.submap_pose_odom.orientation.z, self.submap_pose_odom.orientation.w ]) # 现在就是用 odom 的位置凑合一下
+        # self.descriptor = np.array([self.submap_pose_odom.position.x, self.submap_pose_odom.position.y, self.submap_pose_odom.position.z, self.submap_pose_odom.orientation.x, self.submap_pose_odom.orientation.y, self.submap_pose_odom.orientation.z, self.submap_pose_odom.orientation.w ]) # 现在就是用 odom 的位置凑合一下
         #np.savetxt('/home/xuzl/catkin_ws/src/gmm_map_python/script/pc.txt', self.submap_point_clouds)
         #print('point cloud saved.')
         self.Descriptor.point_cloud = self.submap_point_clouds.copy()
@@ -415,7 +415,7 @@ class TrajMapBuilder:
         self.tf_graph = TFGraph()
         self.tf_graph.new_tf_node(self.self_robot_id)
 
-        self.match_thr = 0.35
+        self.match_thr = 0.25
 
         # self.backpubglobalpoint = threading.Thread(target=self.pointmap_single_thread)
         # self.backpubglobalpoint.setDaemon(True)
@@ -431,10 +431,11 @@ class TrajMapBuilder:
     
     def detect_match_candidate_onemap(self, inputsubmap, targetsubmap):
         # TODO shency fix 
-        # dist = np.linalg.norm(inputsubmap.decriptor[0:3] - targetsubmap.decriptor[0:3])
-        # cosine_orient = np.dot(inputsubmap.decriptor[3:], targetsubmap.decriptor[3:].T)
+        # dist = np.linalg.norm(inputsubmap.descriptor[0:3] - targetsubmap.descriptor[0:3])
+        # cosine_orient = np.dot(inputsubmap.descriptor[3:], targetsubmap.descriptor[3:].T)
         cosine_orient = np.dot(inputsubmap.descriptor, targetsubmap.descriptor.T)
         # print('cosine dist: {}'.format(cosine_orient))
+        # return (1-cosine_orient)*dist
         return (1-cosine_orient)
 
     def detect_match_candidate_one_robot(self, inputsubmap, robotsubmaps):
