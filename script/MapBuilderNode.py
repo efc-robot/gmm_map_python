@@ -388,6 +388,8 @@ class TrajMapBuilder:
 
         self.path = Path()
         self.pathodom = Path()
+        self.all_path = {}
+        self.all_path['robot{}'.format(self.self_robot_id)] = self.path
         # self.octomap = octomap.OcTree(0.1)
 
         self.newsubmap_builder = None
@@ -399,6 +401,8 @@ class TrajMapBuilder:
         self.path_pub = rospy.Publisher('path', Path, queue_size=1)
         self.path_pubodom = rospy.Publisher('pathodom', Path, queue_size=1)
         self.submap_publisher = rospy.Publisher('/all_submap',String, queue_size=1)
+        self.all_path_pub = {}
+        self.all_path_pub['robot{}'.format(self.self_robot_id)] = self.path_pub
 
         self.test_pc2_pub = rospy.Publisher('testpoints', PointCloud2,queue_size=1)
         self.self_pc_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_self_pointcloud,queue_size=1)
@@ -491,6 +495,8 @@ class TrajMapBuilder:
             self.all_self_constraint_lists[current_robot_id] = []
             self.tf_graph.new_tf_node(recvsubmap.robot_id)
             print self.tf_graph.graph_to_dot()
+            self.all_path[current_robot_id] = Path()
+            self.all_path_pub[current_robot_id] = rospy.Publisher('{}_path'.format(current_robot_id), Path, queue_size=1)
         if not (current_robot_id == 'robot{}'.format(self.self_robot_id) ): #如果听到的不是自己机器人的地图,就保存下来(自己的地图已经保存过了)
             # 计算和前一帧的 constraint
             self.all_submap_locks[current_robot_id].acquire()
@@ -600,15 +606,23 @@ class TrajMapBuilder:
                 consopt = ConstrOptimizer(self.self_robot_id, self.all_submap_lists, self.all_self_constraint_lists, self.inter_constraint_list, self.tf_graph, self.newsubmap_builder, '/tmp/testg2o_{}'.format(self.self_robot_id))
                 consopt.constructproblem()
                 for lock in self.all_submap_locks.values():
+                    lock.acquire(False)
                     lock.release()
 
-                #这里是不论接收到哪些帧,都需要的操作
-                self.gen_submap_path()
-                self.gen_submap_pathodom()
-                self.path_pub.publish(self.path) #这个是打印轨迹,相对map
-                self.path_pubodom.publish(self.pathodom) #这个是打印轨迹,相对odom
-                self.refresh_ego_mapodom_tf() #更新map和pose的tf树
-                self.refresh_inter_robot_tf()
+            for lock in self.all_submap_locks.values():
+                lock.acquire()
+            #这里是不论接收到哪些帧,都需要的操作
+            self.gen_submap_path()
+            self.gen_submap_pathodom()
+            for robot_id, pub in self.all_path_pub.items():
+                pub.publish(self.all_path[robot_id])
+            # self.path_pub.publish(self.path) #这个是打印轨迹,相对map
+            self.path_pubodom.publish(self.pathodom) #这个是打印轨迹,相对odom
+            self.refresh_ego_mapodom_tf() #更新map和pose的tf树
+            self.refresh_inter_robot_tf()
+            for lock in self.all_submap_locks.values():
+                lock.acquire(False)
+                lock.release()
 
     def callback_new_self_pointcloud(self, data): #这个函数负责确定何时开始一个新的关键帧率,目前只是用来调试
         if (self.new_self_submap_count < 40):
@@ -699,13 +713,19 @@ class TrajMapBuilder:
             sub_pointcloud.header.frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
             self.newsubmap_builder.insert_point(sub_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
 
-
+        for lock in self.all_submap_locks.values():
+            lock.acquire()
         #这里是不论接收到哪些帧,都需要的操作
         self.gen_submap_path()
         self.gen_submap_pathodom()
-        self.path_pub.publish(self.path) #这个是打印轨迹,相对map
+        for robot_id, pub in self.all_path_pub.items():
+            pub.publish(self.all_path[robot_id])
+        # self.path_pub.publish(self.path) #这个是打印轨迹,相对map
         self.path_pubodom.publish(self.pathodom) #这个是打印轨迹,相对odom
         self.refresh_ego_mapodom_tf() #更新map和pose的tf树
+        for lock in self.all_submap_locks.values():
+            lock.acquire(False)
+            lock.release()
             
         # 调试点云的时候的可视化 
             # showpoints = np2pointcloud2(self.newsubmap_builder.submap_point_clouds,'submap_base_link_{}'.format(self.newsubmap_builder.submap_index) )   
@@ -730,21 +750,24 @@ class TrajMapBuilder:
         # self.path_pub.publish(self.path)
 
     def gen_submap_path(self):
-        self.path = Path()
-        self.path.header.frame_id = self.map_frame
-        self.path.header.stamp = rospy.Time.now()
+        # self.path = Path()
+        # self.path.header.frame_id = self.map_frame
+        # self.path.header.stamp = rospy.Time.now()
         # for submap in self.list_of_submap:
         #     self.path.poses.append(submap.get_submap_pose_stamped() )
         # self.path.poses.append(self.newsubmap_builder.get_submap_pose_stamped() )
         for robot_id, submap_list in self.all_submap_lists.items():
+            self.all_path[robot_id].poses = []
+            self.all_path[robot_id].header.frame_id = self.map_frame
+            self.all_path[robot_id].header.stamp = rospy.Time.now()
             tf_inter_robot = None
             if robot_id != 'robot{}'.format(self.self_robot_id):
                 tf_inter_robot = self.tf_graph.get_tf(submap_list[0].robot_id, self.self_robot_id)
             for submap in submap_list:
-                self.path.poses.append(submap.get_submap_pose_stamped(tf_inter_robot) )
+                self.all_path[robot_id].poses.append(submap.get_submap_pose_stamped(tf_inter_robot) )
             if robot_id == 'robot{}'.format(self.self_robot_id):
-                self.path.poses.append(self.newsubmap_builder.get_submap_pose_stamped() )
-        return self.path
+                self.all_path[robot_id].poses.append(self.newsubmap_builder.get_submap_pose_stamped() )
+        return self.all_path[robot_id]
 
     def gen_submap_pathodom(self):
         self.pathodom = Path()
