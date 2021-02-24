@@ -606,8 +606,8 @@ class TrajMapBuilder:
                 consopt = ConstrOptimizer(self.self_robot_id, self.all_submap_lists, self.all_self_constraint_lists, self.inter_constraint_list, self.tf_graph, self.newsubmap_builder, '/tmp/testg2o_{}'.format(self.self_robot_id))
                 consopt.constructproblem()
                 for lock in self.all_submap_locks.values():
-                    lock.acquire(False)
-                    lock.release()
+                    if lock.locked():
+                        lock.release()
 
             for lock in self.all_submap_locks.values():
                 lock.acquire()
@@ -621,8 +621,8 @@ class TrajMapBuilder:
             self.refresh_ego_mapodom_tf() #更新map和pose的tf树
             self.refresh_inter_robot_tf()
             for lock in self.all_submap_locks.values():
-                lock.acquire(False)
-                lock.release()
+                if lock.locked():
+                    lock.release()
 
     def callback_new_self_pointcloud(self, data): #这个函数负责确定何时开始一个新的关键帧率,目前只是用来调试
         if (self.new_self_submap_count < 40):
@@ -724,8 +724,8 @@ class TrajMapBuilder:
         self.path_pubodom.publish(self.pathodom) #这个是打印轨迹,相对odom
         self.refresh_ego_mapodom_tf() #更新map和pose的tf树
         for lock in self.all_submap_locks.values():
-            lock.acquire(False)
-            lock.release()
+            if lock.locked():
+                lock.release()
             
         # 调试点云的时候的可视化 
             # showpoints = np2pointcloud2(self.newsubmap_builder.submap_point_clouds,'submap_base_link_{}'.format(self.newsubmap_builder.submap_index) )   
