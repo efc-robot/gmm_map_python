@@ -8,6 +8,7 @@ from geometry_msgs.msg import Pose, PoseStamped, Transform, TransformStamped, Qu
 from nav_msgs.msg import Path
 import tf
 import tf2_ros
+from tf2_ros import TransformException
 from tf2_sensor_msgs import do_transform_cloud
 import rospy
 import time
@@ -84,13 +85,19 @@ def np2pointcloud2(points, frame_id, timestamp = None): #转换三维点云
         outputheader.stamp = timestamp
     return point_cloud2.create_cloud_xyz32(outputheader,points)
 
-def poseID2robotID(poseID):
+def poseID2robotID(poseID, self_id):
     submap_index = int(poseID%1e8)
     robot_id = int(poseID/1e8)
-    return robot_id, submap_index
+    if robot_id != 0:
+        return robot_id, submap_index
+    else:
+        return self_id, submap_index
 
-def robotID2poseID(robot_id , submap_index):
-    return int(submap_index + 1e8*robot_id)
+def robotID2poseID(robot_id, submap_index, self_id):
+    if robot_id != self_id:
+        return int(submap_index + 1e8*robot_id)
+    else:
+        return int(submap_index)
 
 def voxel_filter(point_cloud, leaf_size,filter_mode):
     filtered_points = []
@@ -177,7 +184,7 @@ class ConstrOptimizer:
                     pose_global = trans2pose(Rigidtrans2transstamped(pose_global).transform)
                 else:
                     pose_global = VERTEXpose.submap_pose
-                vertexID = robotID2poseID(VERTEXpose.robot_id, VERTEXpose.submap_index)
+                vertexID = robotID2poseID(VERTEXpose.robot_id, VERTEXpose.submap_index, self.robot_id)
                 # print vertexID
                 print >> g2ofile, "VERTEX_SE3:QUAT {pointID} {tx} {ty} {tz} {rx} {ry} {rz} {rw}".format(pointID = vertexID,
                     tx = pose_global.position.x, ty = pose_global.position.y, tz = pose_global.position.z, 
@@ -186,8 +193,8 @@ class ConstrOptimizer:
     def AddConstr2g2oEdge(self, g2ofname, constr):
         with open(g2ofname, "a") as g2ofile:
             for EDGEtrans in constr:
-                id1 = robotID2poseID(EDGEtrans.to_robot, EDGEtrans.to_index)
-                id2 = robotID2poseID(EDGEtrans.from_robot,EDGEtrans.from_index)
+                id1 = robotID2poseID(EDGEtrans.to_robot, EDGEtrans.to_index, self.robot_id)
+                id2 = robotID2poseID(EDGEtrans.from_robot,EDGEtrans.from_index, self.robot_id)
                 # print '{} {}'.format(id1, id2)
                 print >> g2ofile, "EDGE_SE3:QUAT {id1} {id2} {tx} {ty} {tz} {rx} {ry} {rz} {rw}  {COVAR_STR}".format(id1=id1,id2=id2, tx =EDGEtrans.constraint.transform.translation.x , ty =EDGEtrans.constraint.transform.translation.y , tz =EDGEtrans.constraint.transform.translation.z, rx =EDGEtrans.constraint.transform.rotation.x, ry =EDGEtrans.constraint.transform.rotation.y, rz =EDGEtrans.constraint.transform.rotation.z, rw =EDGEtrans.constraint.transform.rotation.w, COVAR_STR=COVAR_STR)
 
@@ -235,7 +242,7 @@ class ConstrOptimizer:
         for keyindex in range(resultPoseslen):
             key = resultPoses.keys().at(keyindex)
             resultpose = resultPoses.atPose3(key)
-            tmprobotID, tmpsubmapID = poseID2robotID(key)
+            tmprobotID, tmpsubmapID = poseID2robotID(key, self.robot_id)
             self.setPoseWithSubmapID(tmprobotID, tmpsubmapID, resultpose)
             self.setNowPosWithSubmapID(tmprobotID, tmpsubmapID, resultpose)
             if tmprobotID != self.robot_id and tmpsubmapID == 0:
@@ -292,8 +299,8 @@ class InsubmapProcess:
         #saved_state_dict = checkpoint['state_dict']
         #self.Descriptor.model.load_state_dict(saved_state_dict)
 
-    def insert_point(self, in_point_cloud, ifcheck = True):
-        print(in_point_cloud.header.frame_id)
+    def insert_point(self, in_point_cloud, ifcheck = True, if_filter = True):
+        # print(in_point_cloud.header.frame_id)
         # assert( 'odom' == in_point_cloud.header.frame_id)
         if (ifcheck):
             assert( 'submap_base_link_{}'.format(self.submap_index) == in_point_cloud.header.frame_id)
@@ -302,7 +309,8 @@ class InsubmapProcess:
         gen_np_cloud = np.array(gen_cloud_point)
         
         self.submap_point_clouds = np.concatenate( (self.submap_point_clouds,gen_np_cloud), axis=0 ) #TODO LOCK
-        self.filter_point() #每次添加了新点云都进行一次滤波
+        if if_filter:
+            self.filter_point() #每次添加了新点云都进行一次滤波
 
     def filter_point(self):
         #要删除重复的点云
@@ -314,16 +322,23 @@ class InsubmapProcess:
         self.GMMmodel = self.clf.fit(self.submap_point_clouds)
         return self.GMMmodel
 
-    def pointmap2odom(self):
+    def pointmap2odom(self, tf_inter_robot = None):
         showpoints = np2pointcloud2(self.submap_point_clouds,'submap_base_link_{}'.format(self.submap_index) )
         
-    # 调试点云的时候的可视化    
-        transform_submap_odom = TransformStamped()
-        transform_submap_odom.transform = pose2trans(self.submap_pose_odom)
-        transform_submap_odom.child_frame_id = 'submap_base_link_{}'.format(self.submap_index)
-        transform_submap_odom.header.frame_id = 'odom' #实际上这个用来变换点云的函数并没有用到这个frameID
+        # 调试点云的时候的可视化    
+        transform_submap = TransformStamped()
+        transform_submap.transform = pose2trans(self.submap_pose)
+        transform_submap.child_frame_id = 'submap_base_link_{}'.format(self.submap_index)
+        transform_submap.header.frame_id = 'robot{}/map'.format(self.robot_id) #实际上这个用来变换点云的函数并没有用到这个frameID
 
-        outputpoints = do_transform_cloud(showpoints,transform_submap_odom)
+        # print "curr_map_base:" + str(transstamp2Rigidtrans(transform_submap))
+        if tf_inter_robot != None:
+            curr_map_base = transstamp2Rigidtrans(transform_submap)
+            transform_submap = Rigidtrans2transstamped(tf_inter_robot * curr_map_base)
+            # print "tf_inter_robot:" + str(tf_inter_robot)
+            # print "transform_submap:" + str(tf_inter_robot * curr_map_base)
+
+        outputpoints = do_transform_cloud(showpoints,transform_submap)
         return outputpoints
 
     def gen_descriptor_pntcld(self):
@@ -370,6 +385,7 @@ class TrajMapBuilder:
         self.tf_listener = tf.TransformListener()
         self.tf2_buffer = tf2_ros.Buffer()
         self.tf2_listener = tf2_ros.TransformListener(self.tf2_buffer)
+        self.transform_base_camera = TransformStamped()
 
         self.registrar = Registrar()
 
@@ -428,11 +444,12 @@ class TrajMapBuilder:
         self.tf_graph.new_tf_node(self.self_robot_id)
         print self.tf_graph.graph_to_dot()
 
-        self.match_thr = 0.21
+        self.match_thr = 0.20
+        self.fitness_thr = 0.05
 
-        # self.backpubglobalpoint = threading.Thread(target=self.pointmap_single_thread)
-        # self.backpubglobalpoint.setDaemon(True)
-        # self.backpubglobalpoint.start()
+        self.backpubglobalpoint = threading.Thread(target=self.pointmap_single_thread)
+        self.backpubglobalpoint.setDaemon(True)
+        self.backpubglobalpoint.start()
         
         self.transform_firstsubmap_odom = None
 
@@ -469,18 +486,18 @@ class TrajMapBuilder:
         return result
         
     def submap_registration(self,inputsubmap,tosubmap): #输入两个子地图,输出两个地图的变换
-        T_to_input = self.registrar.registration2(inputsubmap.submap_point_clouds, tosubmap.submap_point_clouds)
+        T_to_input, fitness = self.registrar.registration2(inputsubmap.submap_point_clouds, tosubmap.submap_point_clouds)
         # T_to_input.transform.translation.z = 1
         # T_to_input.transform.rotation.w = 1
         T_to_input.header.frame_id = 'submap_base_link_{}'.format(tosubmap.submap_index)
         T_to_input.child_frame_id = 'submap_base_link_{}'.format(inputsubmap.submap_index)
         # print T_to_input
-        return T_to_input
+        return T_to_input, fitness
 
     def submaps_to_constraint(self,inputsubmap,tosubmap): #输入两个子地图,直接构造成constraint
-        trans_tmp = self.submap_registration( inputsubmap, tosubmap )
+        trans_tmp, fitness = self.submap_registration( inputsubmap, tosubmap )
         result = ConstraintTransform(inputsubmap.robot_id, inputsubmap.submap_index, tosubmap.robot_id, tosubmap.submap_index, trans_tmp ) #都是记录 from 是新的 to 是旧的
-        return result
+        return result, fitness
 
     def callback_submap_listener(self, data): #主要是为了处理回环,包括自己的回环和别人的回环  
         recvstr = data.data
@@ -525,9 +542,10 @@ class TrajMapBuilder:
                 print('match_index[0]:' + str(match_index[0]))
                 # if len(match_valid) > 0: #说明有自身回环
                 for valid_index in match_index[0]: #因为只有一个维度
-                    innerconstraint = self.submaps_to_constraint(recvsubmap, self.all_submap_lists[robotname][valid_index] )
-                    self.all_self_constraint_lists[current_robot_id].append(innerconstraint)
-                    self.new_self_loop = True
+                    innerconstraint, fitness = self.submaps_to_constraint(recvsubmap, self.all_submap_lists[robotname][valid_index] )
+                    if fitness < self.fitness_thr:
+                        self.all_self_constraint_lists[current_robot_id].append(innerconstraint)
+                        self.new_self_loop = True
             else: #寻找机器人之间的约束
                 # print(match[robotname])
                 match_valid = match[robotname] < self.match_thr
@@ -536,32 +554,33 @@ class TrajMapBuilder:
                 print('match_index[0]:' + str(match_index[0]))
                 # if len(match_valid[0]) > 0: #说明有约束 
                 for valid_index in match_index[0]: #因为只有一个维度
-                    innerconstraint = self.submaps_to_constraint(recvsubmap, self.all_submap_lists[robotname][valid_index] )
+                    innerconstraint, fitness = self.submaps_to_constraint(recvsubmap, self.all_submap_lists[robotname][valid_index] )
                     # innerconstraint.show()
-                    self.inter_constraint_list.append(innerconstraint)
+                    if fitness < self.fitness_thr:
+                        self.inter_constraint_list.append(innerconstraint)
 
-                    tf_edge_key,tf_edge = self.tf_graph.get_tf_edge(innerconstraint.from_robot, innerconstraint.to_robot)
-                    if tf_edge == None:
-                        curr_map_base = pose2Rigidtrans(recvsubmap.submap_pose, 'submap_base_link_{}'.format(recvsubmap.submap_index), 'robot{}/map'.format(recvsubmap.robot_id))
-                        match_map_base = pose2Rigidtrans(self.all_submap_lists[robotname][valid_index].submap_pose, 'submap_base_link_{}'.format(self.all_submap_lists[robotname][valid_index].submap_index), 'robot{}/map'.format(innerconstraint.to_robot))
-                        inter_map_cons = match_map_base * transstamp2Rigidtrans(innerconstraint.constraint) * curr_map_base.inverse()
-                        self.tf_graph.new_tf_edge(innerconstraint.from_robot, innerconstraint.to_robot, inter_map_cons)
-                        print self.tf_graph.graph_to_dot()
-                        # transresult = Rigidtrans2transstamped(inter_map_cons)
-                        # transresult.header.stamp = rospy.Time.now()
-                        # print transresult
-                        # self.br_inter_robot.sendTransformMessage(transresult)
-                    else:
-                        print 'add existing tf edge'
-                        self.tf_graph.add_existing_tf_edge(innerconstraint.from_robot, innerconstraint.to_robot)
-                        print self.tf_graph.graph_to_dot()
-                        
-                        curr_map_base = pose2Rigidtrans(recvsubmap.submap_pose, 'submap_base_link_{}'.format(recvsubmap.submap_index), 'robot{}/map'.format(recvsubmap.robot_id))
-                        match_map_base = pose2Rigidtrans(self.all_submap_lists[robotname][valid_index].submap_pose, 'submap_base_link_{}'.format(self.all_submap_lists[robotname][valid_index].submap_index), 'robot{}/map'.format(innerconstraint.to_robot))
-                        inter_map_cons = match_map_base * transstamp2Rigidtrans(innerconstraint.constraint) * curr_map_base.inverse()
-                        print inter_map_cons
+                        tf_edge_key,tf_edge = self.tf_graph.get_tf_edge(innerconstraint.from_robot, innerconstraint.to_robot)
+                        if tf_edge == None:
+                            curr_map_base = pose2Rigidtrans(recvsubmap.submap_pose, 'submap_base_link_{}'.format(recvsubmap.submap_index), 'robot{}/map'.format(recvsubmap.robot_id))
+                            match_map_base = pose2Rigidtrans(self.all_submap_lists[robotname][valid_index].submap_pose, 'submap_base_link_{}'.format(self.all_submap_lists[robotname][valid_index].submap_index), 'robot{}/map'.format(innerconstraint.to_robot))
+                            inter_map_cons = match_map_base * transstamp2Rigidtrans(innerconstraint.constraint) * curr_map_base.inverse()
+                            self.tf_graph.new_tf_edge(innerconstraint.from_robot, innerconstraint.to_robot, inter_map_cons)
+                            print self.tf_graph.graph_to_dot()
+                            # transresult = Rigidtrans2transstamped(inter_map_cons)
+                            # transresult.header.stamp = rospy.Time.now()
+                            # print transresult
+                            # self.br_inter_robot.sendTransformMessage(transresult)
+                        else:
+                            print 'add existing tf edge'
+                            self.tf_graph.add_existing_tf_edge(innerconstraint.from_robot, innerconstraint.to_robot)
+                            print self.tf_graph.graph_to_dot()
+                            
+                            curr_map_base = pose2Rigidtrans(recvsubmap.submap_pose, 'submap_base_link_{}'.format(recvsubmap.submap_index), 'robot{}/map'.format(recvsubmap.robot_id))
+                            match_map_base = pose2Rigidtrans(self.all_submap_lists[robotname][valid_index].submap_pose, 'submap_base_link_{}'.format(self.all_submap_lists[robotname][valid_index].submap_index), 'robot{}/map'.format(innerconstraint.to_robot))
+                            inter_map_cons = match_map_base * transstamp2Rigidtrans(innerconstraint.constraint) * curr_map_base.inverse()
+                            print inter_map_cons
 
-                    self.new_self_loop = True
+                        self.new_self_loop = True
 
                         
                         
@@ -609,20 +628,21 @@ class TrajMapBuilder:
                     if lock.locked():
                         lock.release()
 
-            for lock in self.all_submap_locks.values():
-                lock.acquire()
-            #这里是不论接收到哪些帧,都需要的操作
-            self.gen_submap_path()
-            self.gen_submap_pathodom()
-            for robot_id, pub in self.all_path_pub.items():
-                pub.publish(self.all_path[robot_id])
-            # self.path_pub.publish(self.path) #这个是打印轨迹,相对map
-            self.path_pubodom.publish(self.pathodom) #这个是打印轨迹,相对odom
-            self.refresh_ego_mapodom_tf() #更新map和pose的tf树
-            self.refresh_inter_robot_tf()
-            for lock in self.all_submap_locks.values():
-                if lock.locked():
-                    lock.release()
+            if self.newsubmap_builder != None:
+                for lock in self.all_submap_locks.values():
+                    lock.acquire()
+                #这里是不论接收到哪些帧,都需要的操作
+                self.gen_submap_path()
+                self.gen_submap_pathodom()
+                for robot_id, pub in self.all_path_pub.items():
+                    pub.publish(self.all_path[robot_id])
+                # self.path_pub.publish(self.path) #这个是打印轨迹,相对map
+                self.path_pubodom.publish(self.pathodom) #这个是打印轨迹,相对odom
+                self.refresh_ego_mapodom_tf() #更新map和pose的tf树
+                self.refresh_inter_robot_tf()
+                for lock in self.all_submap_locks.values():
+                    if lock.locked():
+                        lock.release()
 
     def callback_new_self_pointcloud(self, data): #这个函数负责确定何时开始一个新的关键帧率,目前只是用来调试
         if (self.new_self_submap_count < 40):
@@ -654,14 +674,19 @@ class TrajMapBuilder:
         # print(self.baselink_frame)
         # print(pointtime)
         # print(rospy.Time.now() )
-        self.tf_listener.waitForTransform(self.baselink_frame,pointheader.frame_id,pointtime,rospy.Duration(0.11))
-        transform_base_camera = self.tf2_buffer.lookup_transform(self.baselink_frame,pointheader.frame_id, pointtime) #将点云转换到当前 base_link 坐标系的变换(一般来说是固定的), 查询出来的是, source 坐标系在 target 坐标系中的位置.
+        try:
+            self.tf_listener.waitForTransform(self.baselink_frame,pointheader.frame_id,pointtime,rospy.Duration(0.11))
+            self.transform_base_camera = self.tf2_buffer.lookup_transform(self.baselink_frame,pointheader.frame_id, pointtime) #将点云转换到当前 base_link 坐标系的变换(一般来说是固定的), 查询出来的是, source 坐标系在 target 坐标系中的位置.
+        except TransformException:
+            print 'no tf'
+        baselink_pointcloud = do_transform_cloud(data,self.transform_base_camera) #将 source(camera) 的点云 变换到 taget(base_link) 坐标系
 
-        baselink_pointcloud = do_transform_cloud(data,transform_base_camera) #将 source(camera) 的点云 变换到 taget(base_link) 坐标系
-
-
-        self.tf_listener.waitForTransform(self.odom_frame,self.baselink_frame,pointtime,rospy.Duration(0.11))
-        transform_odom_base = self.tf2_buffer.lookup_transform(self.odom_frame,self.baselink_frame, pointtime) #得到了 baselink 在odom 坐标系中的位置
+        try:
+            self.tf_listener.waitForTransform(self.odom_frame,self.baselink_frame,pointtime,rospy.Duration(5))
+            transform_odom_base = self.tf2_buffer.lookup_transform(self.odom_frame,self.baselink_frame, pointtime) #得到了 baselink 在odom 坐标系中的位置
+        except TransformException:
+            print 'no tf -- break'
+            return
         if self.new_self_submap: #说明要增加一个新的关键帧
             self.all_submap_locks['robot{}'.format(self.self_robot_id)].acquire()
 
@@ -726,7 +751,8 @@ class TrajMapBuilder:
         for lock in self.all_submap_locks.values():
             if lock.locked():
                 lock.release()
-            
+
+        # print 'finish point_callback'
         # 调试点云的时候的可视化 
             # showpoints = np2pointcloud2(self.newsubmap_builder.submap_point_clouds,'submap_base_link_{}'.format(self.newsubmap_builder.submap_index) )   
             # transform_submap_odom = TransformStamped()
@@ -762,7 +788,7 @@ class TrajMapBuilder:
             self.all_path[robot_id].header.stamp = rospy.Time.now()
             tf_inter_robot = None
             if robot_id != 'robot{}'.format(self.self_robot_id):
-                tf_inter_robot = self.tf_graph.get_tf(submap_list[0].robot_id, self.self_robot_id)
+                tf_inter_robot = self.tf_graph.get_tf(int(robot_id[5:]), self.self_robot_id)
             for submap in submap_list:
                 self.all_path[robot_id].poses.append(submap.get_submap_pose_stamped(tf_inter_robot) )
             if robot_id == 'robot{}'.format(self.self_robot_id):
@@ -783,9 +809,17 @@ class TrajMapBuilder:
         tmpmap_builder = InsubmapProcess(0,0,Pose(),Pose(),self.Descriptor)
         # if (len(self.list_of_submap) <= 1):
         #     return 
-        for submapinst in self.list_of_submap:
-            showpoints = submapinst.pointmap2odom() #不同的点云都在odom坐标系中
-            tmpmap_builder.insert_point(showpoints, False)
+        for robot_id, submap_list in self.all_submap_lists.items():
+            # print 'pointmap_thread: {}'.format(robot_id)
+            tf_inter_robot = None
+            if robot_id != 'robot{}'.format(self.self_robot_id):
+                tf_inter_robot = self.tf_graph.get_tf(int(robot_id[5:]), self.self_robot_id)
+                if tf_inter_robot == None:
+                    continue
+            for submapinst in submap_list:
+                # print 'pointmap_thread: {} - {}'.format(robot_id,submapinst.submap_index)
+                showpoints = submapinst.pointmap2odom(tf_inter_robot) #不同的点云都在map坐标系中
+                tmpmap_builder.insert_point(showpoints, ifcheck=False, if_filter=False)
         
         showpoints = np2pointcloud2(tmpmap_builder.submap_point_clouds,self.odom_frame)            
         # # 调试点云的时候的可视化    

@@ -19,14 +19,17 @@ class Registrar:
         point_cloud1 = pcl.PointCloud(point_cloud1_np)
         point_cloud2 = pcl.PointCloud(point_cloud2_np)
         self.T = self.icp.icp(point_cloud1, point_cloud2)
-        T = self.T[1]
-        T = RigidTransform(T[0:3,0:3], T[0:3,3].reshape(3))
-        pose = T.pose_msg
-        T_to_input = TransformStamped()
-        T_to_input.transform.rotation = pose.orientation
-        T_to_input.transform.translation = pose.position
+        print self.T
+        T_to_input = None
+        if self.T[0]:
+            T = self.T[1]
+            T = RigidTransform(T[0:3,0:3], T[0:3,3].reshape(3))
+            pose = T.pose_msg
+            T_to_input = TransformStamped()
+            T_to_input.transform.rotation = pose.orientation
+            T_to_input.transform.translation = pose.position
 
-        return T_to_input
+        return T_to_input, self.T[3]
 
 
 if __name__ == '__main__':

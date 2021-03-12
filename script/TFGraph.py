@@ -30,7 +30,9 @@ class TFGraph(pygraph.DirectedGraph):
     def set_tf_edge(self, from_robot_id, to_robot_id, Rigidtrans):
         from_node_id,from_node = self.get_tf_node(from_robot_id)
         to_node_id,to_node = self.get_tf_node(to_robot_id)
+        print 'change from'
         print self.get_graph_edge(from_node_id, to_node_id)[1]['data']['tf']
+        print 'to'
         print Rigidtrans
         self.get_graph_edge(from_node_id, to_node_id)[1]['data']['tf'] = Rigidtrans
         self.get_graph_edge(to_node_id, from_node_id)[1]['data']['tf'] = Rigidtrans.inverse()
