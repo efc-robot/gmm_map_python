@@ -70,7 +70,7 @@ class Descriptor:
         self.model.eval()
         with torch.no_grad():
             model_out = self.model(model_in)
-        return model_out.cpu()
+        return model_out.cpu().numpy()
             
 
 if __name__ == '__main__':

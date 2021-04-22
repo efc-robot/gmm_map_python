@@ -35,10 +35,15 @@ private:
 };
 
 void DownSamplePointCloud2::pointcloudCallback(sensor_msgs::PointCloud2 img){
+    std::cout << "ros time" << img.header.stamp << std::endl;
+    std::cout << "ros now time" << ros::Time::now() << std::endl;
 
-    if ( img.header.stamp < current_time + ros::Duration(0.1) ){
+    if ( img.header.stamp < ros::Time::now() - ros::Duration(0.5) ){
+      std::cout<< img.header.stamp - ros::Time::now() <<std::endl;
+      std::cout<<"discord!"<<std::endl;
       return;
     }
+
     current_time = img.header.stamp;
     pcl::fromROSMsg(img, cloud_input_);
     std::vector<int> indices;
@@ -48,6 +53,8 @@ void DownSamplePointCloud2::pointcloudCallback(sensor_msgs::PointCloud2 img){
     sor_.filter(cloud_input_);
     sensor_msgs::PointCloud2 img_tmp;
     pcl::toROSMsg(cloud_input_,img_tmp);// to do: add other info, like tf, to this msg
+    std::cout << "ros time" << img.header.stamp << std::endl;
+    std::cout << "ros now time" << ros::Time::now() << std::endl;
     img_tmp.header=img.header;
     std::cout << "ros time" << img_tmp.header.stamp << std::endl;
     std::cout << "ros now time" << ros::Time::now() << std::endl;

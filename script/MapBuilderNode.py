@@ -24,12 +24,13 @@ import pickle
 from generate_descriptor import Descriptor
 from map_registration import Registrar
 from TFGraph import TFGraph
+from sys import getsizeof
 import gtsam
 import copy
 import pygraph
-
 COVAR_STR = "1.000000 0.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000 0.000000   1.000000 0.000000 0.000000   1.000000 0.000000   1.000000"
-
+import cPickle
+from gmm_map_python.msg import Submap
 
 def strip_leading_slash(s):
     return s[1:] if s.startswith("/") else s
@@ -37,7 +38,9 @@ def strip_leading_slash(s):
 def trans2pose(trans):
     pose = Pose()
     pose.orientation = trans.rotation
-    pose.position = trans.translation
+    pose.position.x = trans.translation.x
+    pose.position.y = trans.translation.y
+    pose.position.z = trans.translation.z
     return pose
 
 
@@ -281,18 +284,18 @@ class ConstraintTransform:
         # print 'tf  :{}'.format(self.constraint)
 
 class InsubmapProcess:
-    def __init__(self, submap_index, robot_id, init_pose_odom, init_pose_map, Descriptor, add_time=None ):
+    def __init__(self, submap_index, robot_id, init_pose_odom, init_pose_map, Descriptor, add_time=None, point_clouds=np.zeros((0,3)), GMMmodel=None, freezed=False, descriptor=None ):
         self.submap_index = submap_index
         self.robot_id = robot_id
         self.submap_pose_odom = init_pose_odom #相比于odom坐标系的位姿(介入odom),一旦输入就不会改变
         self.submap_pose = init_pose_map #相比于map坐标系的位姿势,一般是从上一个submap递推得到,优化也优化这个
         self.add_time = add_time
-        self.submap_point_clouds = np.zeros((0,3)) #TODO LOCK #讲道理访问这个东西的时候需要加锁
+        self.submap_point_clouds = point_clouds #TODO LOCK #讲道理访问这个东西的时候需要加锁
         self.clf = GaussianMixture(n_components=100, covariance_type='diag')
-        self.GMMmodel = None
+        self.GMMmodel = GMMmodel
         self.Octomap = None
-        self.freezed = False
-        self.descriptor = None
+        self.freezed = freezed
+        self.descriptor = descriptor
         self.Descriptor = Descriptor
         # load weights
         #checkpoint = torch.load("model.ckpt")
@@ -307,7 +310,6 @@ class InsubmapProcess:
 
         gen_cloud_point = point_cloud2.read_points_list(in_point_cloud, field_names=("x", "y", "z"), skip_nans=True)
         gen_np_cloud = np.array(gen_cloud_point)
-        
         self.submap_point_clouds = np.concatenate( (self.submap_point_clouds,gen_np_cloud), axis=0 ) #TODO LOCK
         if if_filter:
             self.filter_point() #每次添加了新点云都进行一次滤波
@@ -411,12 +413,12 @@ class TrajMapBuilder:
         self.newsubmap_builder = None
         self.prefixsubmap_builder = None
         
-        self.Descriptor = Descriptor(model_dir='/home/xuzhl/catkin_ws/src/gmm_map_python/script/model13.ckpt')
+        self.Descriptor = Descriptor(model_dir='/home/nvidia/catkin_ws/src/gmm_map_python/script/model13.ckpt')
 
         # self.pose_pub = rospy.Publisher('pose', PoseStamped, queue_size=1)
         self.path_pub = rospy.Publisher('path', Path, queue_size=1)
         self.path_pubodom = rospy.Publisher('pathodom', Path, queue_size=1)
-        self.submap_publisher = rospy.Publisher('/all_submap',String, queue_size=1)
+        self.submap_publisher = rospy.Publisher('/all_submap',Submap, queue_size=1)
         self.all_path_pub = {}
         self.all_path_pub['robot{}'.format(self.self_robot_id)] = self.path_pub
 
@@ -425,7 +427,7 @@ class TrajMapBuilder:
         self.new_self_submap_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_new_self_pointcloud,queue_size=1)
         # self.new_self_loop_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_add_sim_loop)
 
-        self.new_submap_listener = rospy.Subscriber('/all_submap', String, self.callback_submap_listener)
+        self.new_submap_listener = rospy.Subscriber('/all_submap', Submap, self.callback_submap_listener)
 
         self.transform_sub1_odom_br = tf2_ros.StaticTransformBroadcaster()
 
@@ -500,8 +502,15 @@ class TrajMapBuilder:
         return result, fitness
 
     def callback_submap_listener(self, data): #主要是为了处理回环,包括自己的回环和别人的回环  
-        recvstr = data.data
-        recvsubmap = pickle.loads(recvstr)
+        #recvstr = data.data
+        #recvsubmap = cPickle.loads(recvstr)
+        recvsubmap = InsubmapProcess(
+            data.submap_index, data.robot_id, 
+            data.pose_odom, data.pose, Descriptor, 
+            np.array(data.point_clouds).reshape(-1,3), data.add_time, data.GMMmodel, 
+            data.is_frozen, np.array(data.descriptor)
+            )
+        print("[FROM CALLBACK_SUBMAP_LISTENER]\tpoint clouds: {:d}".format(np.shape(data.point_clouds)[0]))
         # print(recvsubmap.robot_id)
         # print(recvsubmap.submap_index)
         # print(recvsubmap)
@@ -663,17 +672,19 @@ class TrajMapBuilder:
             tmp = 1
 
     def callback_self_pointcloud(self, data): #监听pointcloud,自己新建地图,并且保存对应的 odom.
-        # print("get callback_self_pointcloud")
+        #print("get callback_self_pointcloud @@@@")
         assert isinstance(data, PointCloud2)
         # print("PointCloud2 OK")
         pointheader = data.header
         pointtime = pointheader.stamp
-        if(pointtime < rospy.Time.now() - rospy.Duration(0.2) ):
+        if(pointtime < rospy.Time.now() - rospy.Duration(10) ):
+            print "return because of speed"
             return #这个主要是为了应对输入的点云太快的问题
-        # pointtime = rospy.Time(0)
-        # print(self.baselink_frame)
-        # print(pointtime)
-        # print(rospy.Time.now() )
+        pointtime = rospy.Time(0)
+        print(self.baselink_frame)
+        #print(pointtime)
+        #print(rospy.Time.now() )
+        #start = time.time()
         try:
             self.tf_listener.waitForTransform(self.baselink_frame,pointheader.frame_id,pointtime,rospy.Duration(0.11))
             self.transform_base_camera = self.tf2_buffer.lookup_transform(self.baselink_frame,pointheader.frame_id, pointtime) #将点云转换到当前 base_link 坐标系的变换(一般来说是固定的), 查询出来的是, source 坐标系在 target 坐标系中的位置.
@@ -681,17 +692,25 @@ class TrajMapBuilder:
             print 'no tf'
         baselink_pointcloud = do_transform_cloud(data,self.transform_base_camera) #将 source(camera) 的点云 变换到 taget(base_link) 坐标系
 
+        # profiling
+        #print("time for pointcloud transfrom: {:.2f}".format(time.time()-start))
+        #start = time.time()
+
         try:
             self.tf_listener.waitForTransform(self.odom_frame,self.baselink_frame,pointtime,rospy.Duration(5))
             transform_odom_base = self.tf2_buffer.lookup_transform(self.odom_frame,self.baselink_frame, pointtime) #得到了 baselink 在odom 坐标系中的位置
         except TransformException:
             print 'no tf -- break'
             return
+
+        # profiling
+        #print("time for odom transfrom: {:.2f}".format(time.time()-start))
+        #start = time.time()
+
         if self.new_self_submap: #说明要增加一个新的关键帧
             self.all_submap_locks['robot{}'.format(self.self_robot_id)].acquire()
 
             self.prefixsubmap_builder = self.newsubmap_builder
-
             # self.con
             self.newsubmap_builder = InsubmapProcess( self.current_submap_id, self.self_robot_id, trans2pose(transform_odom_base.transform), trans2pose(transform_odom_base.transform), self.Descriptor, pointtime )
             baselink_pointcloud.header.frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
@@ -699,9 +718,16 @@ class TrajMapBuilder:
             self.newsubmap_builder.insert_point(baselink_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
 
             if not (self.prefixsubmap_builder == None): #如果不是第一帧,就需要把之前的帧给保存下来
+                start = time.time()
                 self.prefixsubmap_builder.gen_descriptor_pntcld() #生成对应的描述子(基于点云生成)
+                print("time for generating descriptor: {:.2f}".format(time.time()-start))
+                start = time.time()
+
                 self.list_of_submap.append(self.prefixsubmap_builder) #保存之前的submap
                 print("save_self_submap_{}".format(self.prefixsubmap_builder.submap_index))
+                print("time for saving submap: {:.2f}".format(time.time()-start))
+                start = time.time()
+
                 # 计算和前一帧的 constraint
                 cur_odom_base = transstamp2Rigidtrans(transform_odom_base)
                 pre_odom_base = pose2Rigidtrans(self.prefixsubmap_builder.submap_pose_odom , 'submap_base_link_{}'.format(self.prefixsubmap_builder.submap_index) ,self.odom_frame)                
@@ -711,21 +737,40 @@ class TrajMapBuilder:
 
                 new_constraint = ConstraintTransform(self.self_robot_id,self.current_submap_id,self.self_robot_id,self.prefixsubmap_builder.submap_index,T_pre_cur )
                 self.self_constraint.append(new_constraint)
-                
+                print("time for calculaing constraints: {:.2f}".format(time.time()-start))
+                start = time.time()
+
                 new_pose_map = pose2Rigidtrans(self.prefixsubmap_builder.submap_pose,  'submap_base_link_{}'.format(self.prefixsubmap_builder.submap_index), self.map_frame  )*Tmsg_pre_cur #odompose直接读取,但是map pose 需要累加计算.
 
                 self.newsubmap_builder.submap_pose = trans2pose(Rigidtrans2transstamped(new_pose_map).transform)
+                print("time for calculaing constraints: {:.2f}".format(time.time()-start))
+                start = time.time()
 
-                pubsubmap = pickle.dumps(self.prefixsubmap_builder)
+                #pubsubmap = cPickle.dumps(self.prefixsubmap_builder)
+                pubsubmap = Submap()
+                pubsubmap.robot_id = self.prefixsubmap_builder.robot_id
+                pubsubmap.submap_index = self.prefixsubmap_builder.submap_index
+                pubsubmap.pose = self.prefixsubmap_builder.submap_pose
+                pubsubmap.pose_odom = self.prefixsubmap_builder.submap_pose_odom
+                pubsubmap.add_time = self.prefixsubmap_builder.add_time
+                pubsubmap.is_frozen = self.prefixsubmap_builder.freezed
+                pubsubmap.point_clouds = np.squeeze(self.prefixsubmap_builder.submap_point_clouds.reshape(-1)).tolist()
+                pubsubmap.descriptor = np.squeeze(self.prefixsubmap_builder.descriptor).tolist()
                 self.submap_publisher.publish(pubsubmap) #将已经建好的submap广播出去
                 tmp = 1
+                print("time for publishing submap: {:.2f}".format(time.time()-start))
+                start = time.time()
             
             self.all_submap_locks['robot{}'.format(self.self_robot_id)].release()
 
 
             self.current_submap_id+=1 #下一个关键帧ID增加
             self.new_self_submap = False #准备接收下一个新的关键帧
-            
+
+            # profiling
+            #print("time for new submap process: {:.2f}".format(time.time()-start))
+            #start = time.time()
+
         else: #在已完成初始化的关键帧上做任务
             # print("在已完成初始化的关键帧上做任务")
             cur_odom_base = transstamp2Rigidtrans(transform_odom_base)
@@ -737,6 +782,10 @@ class TrajMapBuilder:
             sub_pointcloud = do_transform_cloud(baselink_pointcloud,T_sub_cur) #在 submap pose 坐标系中的点云
             sub_pointcloud.header.frame_id = 'submap_base_link_{}'.format(self.newsubmap_builder.submap_index)
             self.newsubmap_builder.insert_point(sub_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图
+
+            # profiling
+            #print("time for existing submap process: {:.2f}".format(time.time()-start))
+            #start = time.time()
 
         for lock in self.all_submap_locks.values():
             lock.acquire()
@@ -751,6 +800,10 @@ class TrajMapBuilder:
         for lock in self.all_submap_locks.values():
             if lock.locked():
                 lock.release()
+
+        # profiling
+        #print("time for pointcloud process: {:.2f}".format(time.time()-start))
+        #start = time.time()
 
         # print 'finish point_callback'
         # 调试点云的时候的可视化 

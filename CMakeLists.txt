@@ -60,6 +60,7 @@ add_message_files(
   gmmlist.msg
   SubmapList.msg
   SubmapEntry.msg
+  Submap.msg
 )
 
 # add_message_files(
