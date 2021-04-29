@@ -1,0 +1,7 @@
+.vscode
+.idea/
+*.vscode
+./venv
+*.pyc
+*.ckpt
+script/model
