@@ -1,0 +1,21 @@
+<launch>
+
+<param name="/use_sim_time" value="true" />
+
+<include file="$(find gmm_map_python)/launch/visualgmm_realsence.launch">
+    <arg name="play_bag" value="true" />
+</include>
+
+<include file="$(find gmm_map_python)/launch/visualgmm_realsence_2.launch">
+    <arg name="play_bag" value="true" />
+</include>
+
+<node pkg="rosbag" type="play" name="recordplay1" args="--clock -k $(find gmm_map_python)/rosbag/gmm_robot2_noclock.bag $(find gmm_map_python)/rosbag/gmm_robot1_noclock.bag" required="true">
+</node>
+
+<!-- <include file="$(find turtlebot3sim)/launch/gazebohouse.launch">
+</include> -->
+<!-- <include file="$(find turtlebot3sim)/launch/small_env_two_robots.launch">
+</include> -->
+
+</launch>

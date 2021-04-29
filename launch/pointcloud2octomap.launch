@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<launch>
+    <node pkg="octomap_server" type="octomap_server_node" name="pointmap2octomap_server">
+        <param name="resolution" value="0.2"/>
+
+        <param name="frame_id" type="string" value="odom"/>
+
+        <param name="point_cloud_max_z" value="10"/>
+        <param name="point_cloud_min_z" value="0"/>
+
+        <remap from="cloud_in" to="sampled_points"/>
+    </node>
+</launch>
