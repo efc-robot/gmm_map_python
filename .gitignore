@@ -5,3 +5,5 @@
 *.pyc
 *.ckpt
 script/model
+baseline2
+rosbag

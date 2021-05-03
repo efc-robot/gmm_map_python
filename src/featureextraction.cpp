@@ -2,35 +2,29 @@
 #include <vector>
 #include <ctime>
 #include <boost/thread/thread.hpp>
-#include <pcl/io/ply_io.h>
-#include <pcl/io/pcd_io.h>
-#include <pcl/visualization/pcl_visualizer.h>
+
 #include <pcl/console/parse.h>
 #include <pcl/features/eigen.h>
 #include <pcl/features/feature.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/impl/point_types.hpp>
 #include <pcl/features/boundary.h>
-#include <pcl/visualization/cloud_viewer.h>
-#include <pcl/visualization/pcl_visualizer.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <pcl_conversions/pcl_conversions.h> 
+
+#include "gmm_map_python/FeatureExtraction.h"
 using namespace std;
 
-int feature_callback()
-{
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-    // // if (pcl::io::loadPCDFile<pcl::PointXYZ>("/home/yxg/pcl/pcd/mid.pcd",*cloud) == -1)
-    // if (pcl::io::loadPCDFile<pcl::PointXYZ>("C:\\Users\\fhlhc\\Desktop\\chairfilter_right.pcd", *cloud) == -1)
-    // {
-    //     PCL_ERROR("COULD NOT READ FILE mid.pcl \n");
-    //     return (-1);
-    // }
-
+bool FeatureExtract(gmm_map_python::FeatureExtraction::Request &img,gmm_map_python::FeatureExtraction::Response &res){
+    pcl::PointCloud<pcl::PointXYZ> cloud_input_;
+    pcl::fromROSMsg(img.input_cloud, cloud_input_);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    cloud = cloud_input_.makeShared();
     std::cout << "points sieze is:" << cloud->size() << std::endl;
     pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
     pcl::PointCloud<pcl::Boundary> boundaries;
     pcl::BoundaryEstimation<pcl::PointXYZ, pcl::Normal, pcl::Boundary> est;
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
-    
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());    
     pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;  //创建一个快速k近邻查询,查询的时候若该点在点云中，则第一个近邻点是其本身
     kdtree.setInputCloud(cloud);
     int k =2;
@@ -47,7 +41,6 @@ int feature_callback()
     }
     everagedistance = everagedistance/(cloud->size()/2);
     cout<<"everage distance is : "<<everagedistance<<endl;
-
     pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> normEst;  //其中pcl::PointXYZ表示输入类型数据，pcl::Normal表示输出类型,且pcl::Normal前三项是法向，最后一项是曲率
     normEst.setInputCloud(cloud);
     normEst.setSearchMethod(tree);
@@ -55,7 +48,6 @@ int feature_callback()
     normEst.setKSearch(9);  //法向估计的点数
     normEst.compute(*normals);
     cout << "normal size is " << normals->size() << endl;
-
     //normal_est.setViewPoint(0,0,0); //这个应该会使法向一致
     est.setInputCloud(cloud);
     est.setInputNormals(normals);
@@ -65,7 +57,6 @@ int feature_callback()
     est.setKSearch(50);  //一般这里的数值越高，最终边界识别的精度越好
     //  est.setRadiusSearch(everagedistance);  //搜索半径
     est.compute(boundaries);
-
     //  pcl::PointCloud<pcl::PointXYZ> boundPoints;
     pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints(new               pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ> noBoundPoints;
@@ -84,40 +75,20 @@ int feature_callback()
 
     }
     std::cout << "boudary size is：" << countBoundaries << std::endl;
-
-    // pcl::io::savePLYFileASCII("C:\\Users\\fhlhc\\Desktop\\Boundpoints.ply", *boundPoints);
-
-
-
-    //双视口
-    boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer("test Viewer"));
-    viewer->initCameraParameters();
-    int v1(0), v2(0);
-    //原始点云窗口
-    viewer->createViewPort(0.0, 0.0, 0.5, 1.0, v1);
-    viewer->setBackgroundColor(0, 0, 0, v1);
-    viewer->addText("original", 10, 10, "v1 text", v1);
-    viewer->addPointCloud<pcl::PointXYZ>(cloud, "sample cloud1", v1);
-    viewer->addCoordinateSystem(1.0);
-    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "sample cloud1");
-    //滤波窗口
-    viewer->createViewPort(0.5, 0.0, 1.0, 1.0, v2);
-    viewer->setBackgroundColor(0, 0, 0, v2);
-    viewer->addText("提取边界", 10, 10, "v2 text", v2);
-    viewer->addPointCloud<pcl::PointXYZ>(boundPoints, "sample cloud2", v2);
-    viewer->addCoordinateSystem(1.0);
-    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "sample cloud2");
-    while (!viewer->wasStopped())
-    {
-        viewer->spinOnce(100);  //刷新
-        boost::this_thread::sleep(boost::posix_time::microseconds(100000));
-    }
+    sensor_msgs::PointCloud2 img_tmp;
+    pcl::toROSMsg(*boundPoints,img_tmp);
+    res.output_cloud=img_tmp;
+    return true;
 }
-
-
 
 int main(int argc, char** argv)
 {
+  std::cout<< "Service init Begin!" <<std::endl;
+  ros::init(argc, argv, "FeatureExtractionNode");
+  ros::NodeHandle nh("~");
+  ros::ServiceServer service=nh.advertiseService("Feature_Service",FeatureExtract);
+  std::cout<< "Service init End!" <<std::endl;
 
-    return 0;
+  ros::spin();
+  return 0;
 }

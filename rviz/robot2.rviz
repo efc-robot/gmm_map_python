@@ -220,9 +220,6 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Tree:
-        robot1/map:
-          robot1/odom:
-            {}
         robot2/map:
           robot2/odom:
             robot2/base_footprint:
@@ -276,13 +273,13 @@ Visualization Manager:
       Unreliable: false
       Value: true
     - Class: rviz/MarkerArray
-      Enabled: true
+      Enabled: false
       Marker Topic: /robot2/GMMvisual
       Name: MarkerArray
       Namespaces:
-        vehicle_model: true
+        {}
       Queue Size: 100
-      Value: true
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

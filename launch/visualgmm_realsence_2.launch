@@ -20,6 +20,8 @@
         <remap from="Downsample/points" to="camera/depth/points"/>
         <remap from="Downsample/sampled_points" to="Downsample/sampled_points"/>
 </node>
+<node pkg="gmm_map_python" name="FeatureExtract" type="FeatureExtractionNode" output="log" required="true">
+</node>
 <node pkg="gmm_map_python" name="MapBuilderNode" type="MapBuilderNode.py" output="screen" required="true">
         <remap from="sampled_points" to="Downsample/sampled_points"/>
         <param name="baselink_frame" value="$(arg robot_name)/base_link"/>

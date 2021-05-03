@@ -35,11 +35,13 @@ class Registrar:
 
     # def registration(source, target, n_components, method, seed_r):
     def GMMreg(self,GMMFrame1,GMMFrame2):
+        #input is GMMmap
         from_gmm=GMMFrame1.Frame_to_SklearnMixture()
         to_gmm=GMMFrame2.Frame_to_SklearnMixture()
         from_params = from_gmm._get_parameters()
         to_params = to_gmm._get_parameters()
         
+        #input is SKlearn GMMmodel
         # from_params = GMMFrame1._get_parameters()
         # to_params = GMMFrame2._get_parameters()
         print("in GMMreg function:",from_params[2].shape)
@@ -139,18 +141,15 @@ class Registrar:
             y = a - b[:, None]
             y = y.reshape((-1,3))
             
-            # print("---",np.dot(Ms,to_params[2]).transpose(1,0,2).shape)
-            print("mat_mul.shape:",Ms.shape,to_params[2].shape,Ms.T.shape)
-            tmp=mat_mul32(mat_mul23(Ms,to_params[2]),Ms.T)[:,None]
+
+            tmp=np.matmul(np.matmul(Ms,to_params[2]),Ms.T)[:,None]
             
             sigma = from_params[2] + tmp
             # sigma = from_params[2] + (Ms @ to_params[2] @ Ms.T)[:,None]
             sigma = sigma.reshape((-1,3,3))
             inv_sigma = np.linalg.inv(sigma)
 
-            print(y[:,None,:].shape,inv_sigma.shape,y[:,:,None].shape)
-            tmp=mat_mul33(mat_mul33(y[:,None,:],inv_sigma),y[:,:,None])
-            print("mat_mul.shape:",y[:,None,:].shape,inv_sigma.shape,y[:,:,None].shape,tmp.shape)
+            tmp=np.matmul(np.matmul(y[:,None,:],inv_sigma),y[:,:,None])
             dist = np.squeeze(tmp)
             # dist = np.squeeze(y[:,None,:] @ inv_sigma @ y[:,:,None])
             dist = dist.reshape((a.shape[0],b.shape[0]))
@@ -162,8 +161,8 @@ class Registrar:
         print("---------------------start minimize!")
         t1=rospy.Time.now()
         # res = opt.minimize(loss_gmm_to_gmm,np.array([1,0,0,0,0,0,0,]),method=None,options={'maxiter':1})
-        res = opt.minimize(loss_gmm_to_gmm_raw2,np.array([1,0,0,0,0,0,0,]),args=([from_gmm.n_components,to_gmm.n_components]),tol=1.0e-2,method=None,options={'maxiter':1})
-        # res = opt.minimize(loss_gmm_to_gmm_raw2,np.array([1,0,0,0,0,0,0,]),args=([GMMFrame1.n_components,GMMFrame2.n_components]),tol=1.0e-2,method=None,options={'maxiter':1})
+        # res = opt.minimize(loss_gmm_to_gmm_raw2,np.array([1,0,0,0,0,0,0,]),args=([from_gmm.n_components,to_gmm.n_components]),tol=1.0e-2,method=None,options={'maxiter':1})
+        res = opt.minimize(loss_gmm_to_gmm_raw3,np.array([1,0,0,0,0,0,0,]))
 
         t2=rospy.Time.now()
         print("--------------------finish minimize!",(t2-t1))
