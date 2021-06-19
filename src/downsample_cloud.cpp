@@ -66,7 +66,7 @@ void DownSamplePointCloud2::pointcloudCallback(sensor_msgs::PointCloud2 img){
     sor_.setLeafSize(0.1f, 0.1f, 0.1f);
     sor_.filter(cloud_input_);
 
-    //边缘检测
+    // //边缘检测
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
     cloud = cloud_input_.makeShared();
     std::cout << "points sieze is:" << cloud->size() << std::endl;
@@ -127,8 +127,8 @@ void DownSamplePointCloud2::pointcloudCallback(sensor_msgs::PointCloud2 img){
     
     //点云转消息
     sensor_msgs::PointCloud2 img_tmp;
-    // pcl::toROSMsg(*boundPoints,img_tmp);
-    pcl::toROSMsg(cloud_input_,img_tmp);// to do: add other info, like tf, to this msg
+    pcl::toROSMsg(*boundPoints,img_tmp);
+    // pcl::toROSMsg(cloud_input_,img_tmp);// to do: add other info, like tf, to this msg
     img_tmp.header=img.header;   
     std::cout << "ros time" << img_tmp.header.stamp << std::endl;
     std::cout << "ros now time" << ros::Time::now() << std::endl;

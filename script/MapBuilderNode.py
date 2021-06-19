@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import sys
 from std_msgs.msg import Header, String
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs import point_cloud2
@@ -257,7 +258,7 @@ class InsubmapProcess:
         self.add_time = add_time
         self.submap_point_clouds = np.zeros((0,3)) #TODO LOCK #讲道理访问这个东西的时候需要加锁      
         self.submap_gmm=GMMFrame()#GMM地图
-        self.clf = GaussianMixture(n_components=20, covariance_type='diag',max_iter=5) #GMM模型生成器
+        self.clf = GaussianMixture(n_components=150, covariance_type='diag',max_iter=5) #GMM模型生成器
         self.clf_feature = GaussianMixture(n_components=100, covariance_type='diag') #GMM模型生成器
         self.GMMmodel = None
         self.Octomap = None
@@ -266,6 +267,7 @@ class InsubmapProcess:
         self.Descriptor = Descriptor
         self.submap_feature_point=np.zeros((0,3)) #每一帧submap生成后统一提取的描述子
         self.submap_feature_gmm=GMMFrame()#GMM地图
+
 
         # load weights
         #checkpoint = torch.load("model.ckpt")
@@ -283,6 +285,10 @@ class InsubmapProcess:
 
         gen_cloud_point = point_cloud2.read_points_list(in_point_cloud, field_names=("x", "y", "z"), skip_nans=True)
         gen_np_cloud = np.array(gen_cloud_point)
+        
+        # np.set_printoptions(threshold=np.inf)
+        # f=open("/home/nics/ral_ws/a.txt", "a")
+        # print >>f,gen_np_cloud
 
         # wall_pnt=np.zeros((0,3))
         # for i in range(gen_np_cloud.shape[0]):           
@@ -296,7 +302,7 @@ class InsubmapProcess:
             self.submap_point_clouds = np.concatenate( (self.submap_point_clouds,gen_np_cloud), axis=0 ) #TODO LOCK
             if ifgmm:
                 tmp=1
-                self.insert_gmm(gen_np_cloud,ifcheck, if_filter)#对新一帧点云生成GMM并添加
+                # self.insert_gmm(gen_np_cloud,ifcheck, if_filter)#对新一帧点云生成GMM并添加
             if if_filter:
                 self.filter_point() #每次添加了新点云都进行一次滤波
     
@@ -359,7 +365,11 @@ class InsubmapProcess:
         gen_np_cloud = np.array(gen_cloud_point)
         self.submap_feature_point = np.concatenate( (self.submap_feature_point,gen_np_cloud), axis=0 )
         self.submap_feature_gmm.GMMsup(self.clf_feature.fit(self.submap_feature_point))
-        print("submap_feature_point:",self.submap_feature_gmm.weights.size)
+        # print("submap_feature_point:",self.submap_feature_gmm.weights.size)
+    
+    def gmm_merge(self):
+        [ori,after]=self.submap_gmm.GMMmer()
+        return ori,after
 
     def gen_descriptor_pntcld(self):
         self.filter_point() #把点云进行滤波
@@ -479,8 +489,8 @@ class TrajMapBuilder:
         self.tf_graph.new_tf_node(self.self_robot_id)
         print self.tf_graph.graph_to_dot()
 
-        self.match_thr = 0.25 #0.4for gmm_PR #0.4 for origin points
-        self.fitness_thr =0.002 #0.04 #0.03
+        self.match_thr = 0.4 #0.4for gmm_PR #0.4 for origin points
+        self.fitness_thr =0.03 #0.04 #0.03
 
         self.backpubglobalpoint = threading.Thread(target=self.pointmap_single_thread)
         self.backpubglobalpoint.setDaemon(True)
@@ -491,6 +501,11 @@ class TrajMapBuilder:
         self.backt = threading.Thread(target=self.BackendThread)
         self.backt.setDaemon(True)
         self.backt.start()
+
+        #data transmission
+        self.cloud_list=[]
+        self.gmm_ori_list=[]
+        self.gmm_after_list=[]
 
     
     def detect_match_candidate_onemap(self, inputsubmap, targetsubmap):
@@ -528,17 +543,11 @@ class TrajMapBuilder:
         #特征点配准
         # T_to_input, fitness = self.registrar.registration2(inputsubmap.submap_feature_point, tosubmap.submap_feature_point)
         #点云地图配准
-        # T_to_input, fitness = self.registrar.registration2(inputsubmap.submap_point_clouds, tosubmap.submap_point_clouds)
+        T_to_input, fitness = self.registrar.registration2(inputsubmap.submap_point_clouds, tosubmap.submap_point_clouds)
 
         #GMM+特征地图配准
-        # clf1 = GaussianMixture(n_components=100, covariance_type='diag',max_iter=5) #GMM模型生成器
-        # clf1 = GaussianMixture(n_components=100, covariance_type='diag') #GMM模型生成器
-        # clf1.fit(inputsubmap.submap_feature_point)
-        # clf2 = GaussianMixture(n_components=100, covariance_type='diag',max_iter=5) #GMM模型生成器
-        # clf2 = GaussianMixture(n_components=100, covariance_type='diag') #GMM模型生成器
-        # clf2.fit(inputsubmap.submap_feature_point)
-        T_to_input, fitness = self.registrar.GMMreg(inputsubmap.submap_feature_gmm, tosubmap.submap_feature_gmm) 
-        print("fitness:",fitness)
+        # T_to_input, fitness = self.registrar.GMMreg(inputsubmap.submap_feature_gmm, tosubmap.submap_feature_gmm) 
+        # print("fitness:",fitness)
 
         # T_to_input.transform.translation.z = 1
         # T_to_input.transform.rotation.w = 1
@@ -770,19 +779,32 @@ class TrajMapBuilder:
 
             if not (self.prefixsubmap_builder == None): #如果不是第一帧,就需要把之前的帧给保存下来    
                 #提取特征点&特征GMM
-                submap_point_msg=np2pointcloud2(self.prefixsubmap_builder.submap_point_clouds,self.odom_frame)
-                response=self.feature_client(submap_point_msg)
-                self.prefixsubmap_builder.insert_feature(response.output_cloud) #只调用一次，名字到insert实际是提取，内含构建feature_gmm
+                # submap_point_msg=np2pointcloud2(self.prefixsubmap_builder.submap_point_clouds,self.odom_frame)
+                # response=self.feature_client(submap_point_msg)
+                # self.prefixsubmap_builder.insert_feature(response.output_cloud) #只调用一次，名字到insert实际是提取，内含构建feature_gmm
                 
-                
+
+                #用点云构建GMMsubmap
+                self.prefixsubmap_builder.insert_gmm(self.prefixsubmap_builder.submap_point_clouds)#对新一帧点云生成GMM并添加
+                self.cloud_list.append(self.prefixsubmap_builder.submap_point_clouds.shape[0])
+
+                #Adaptive Model Selection
+                [ori,after]=self.prefixsubmap_builder.gmm_merge()
+                self.gmm_ori_list.append(ori)
+                self.gmm_after_list.append(after)
+                print("cloud_list:",self.cloud_list)
+                print("gmm_ori_list:",self.gmm_ori_list)
+                print("gmm_after_list:",self.gmm_after_list)
+
                 # response.output_cloud.header.frame_id=data.header.frame_id #debug
                 # self.tmp_pub.publish(response.output_cloud) #debug
 
                 #生成对应的描述子(基于点云生成)
-                # self.prefixsubmap_builder.gen_descriptor_pntcld() 
+                self.prefixsubmap_builder.gen_descriptor_pntcld() 
 
                 #基于gmm生成描述子
-                self.prefixsubmap_builder.gen_descriptor_gmm()
+                # self.prefixsubmap_builder.gen_descriptor_gmm()
+
                 # pnt_tmp=self.prefixsubmap_builder.gen_descriptor_gmm()
                 # pnt_tmp = np2pointcloud2(pnt_tmp,self.odom_frame)
                 # self.tmp_pub.publish(pnt_tmp) 

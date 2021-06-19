@@ -72,7 +72,6 @@ class GMMFrame: #GMM建完后操作都在GMMSubmap类中进行
             gmmmsg.z_var.append(self.covariances[i][2])
         return gmmmsg
 
-
     def GMM2odom(self,submap_pose):
         # print(self.covariances.shape)
         # gmm_after_trans=GMMFrame()
@@ -104,12 +103,10 @@ class GMMFrame: #GMM建完后操作都在GMMSubmap类中进行
             # gmm_after_trans.covariances=covar_tmp
         #GMMFrame里不存pose，建msg的函数再传入
         # return gmm_after_trans
-
-        
+    
     def GMMreg(self):
         #放在Register类中了
         pass
-
 
     def GMMcog(self,Des): #场景识别
         #生成和当前GMMFrame一样的sklearnGMM
@@ -130,4 +127,66 @@ class GMMFrame: #GMM建完后操作都在GMMSubmap类中进行
         pass
 
     def GMMmer(self):# HGMM生成
-        pass
+        z_count=0
+        x_sum=0 #x主方向上x坐标的和
+        y_sum=0
+        z_sum=0
+        z_index=[]
+        # print(self.mix_num,self.weights.shape,self.means.shape,self.covariances.shape)
+        for n in range(self.mix_num):
+            # tmp=[self.x_var[n],self.y_var[n],self.z_var[n]]
+            tmp=self.covariances[n][:]
+            if tmp.tolist().index(min(tmp))==2 and self.means[n][2]<0.1:
+                z_index.append(int(n))
+                z_count=z_count+1
+                x_sum=x_sum+self.means[n][0]
+                y_sum=y_sum+self.means[n][1]
+                z_sum=z_sum+self.means[n][2]
+             
+        z_avg=[x_sum/z_count,y_sum/z_count,z_sum/z_count]
+        #z主方向合并
+        distance=np.zeros((2,z_count))
+        distance[0][:]=z_index
+        for n in range(z_count):
+            distance[1][n]=np.sqrt(pow((self.means[z_index[n]][0]-z_avg[0]),2)+pow((self.means[z_index[n]][1]-z_avg[1]),2))
+        distance.T[np.lexsort(distance)].T #按最后一行排列
+        # print(distance[1])
+        tmpp=distance[1][:]
+        selected = [x for x in tmpp if x<1]
+        # print(selected.shape)
+        merge_num=np.size(selected)
+        if (z_count>2):  
+            index_input=distance[0][0:merge_num] #合并的序号
+            index_input.tolist()
+            index_input = list(map(lambda x: int(x), index_input))
+            
+            prior_tmp=self.weights[index_input]
+            prior_tmp=prior_tmp.reshape((prior_tmp.shape[0],1))
+            # print(self.means[index_input][0],prior_tmp)
+            w0=sum(self.weights[index_input])
+            mu0_x=sum(self.means[index_input][0]*prior_tmp[0])/w0
+            mu0_y=sum(self.means[index_input][1]*prior_tmp[1])/w0
+            mu0_z=sum(self.means[index_input][2]*prior_tmp[2])/w0
+            sigma0_x=sum(prior_tmp[0]*(self.covariances[index_input][0]+pow(self.means[index_input][0]-mu0_x,2)))
+            sigma0_y=sum(prior_tmp[1]*(self.covariances[index_input][1]+pow(self.means[index_input][1]-mu0_y,2)))
+            sigma0_z=sum(prior_tmp[2]*(self.covariances[index_input][2]+pow(self.means[index_input][2]-mu0_z,2)))  
+            # sigma0_z=max(self.covariances[index_input][2])
+            # print(w0,mu0_x,mu0_y,mu0_z,sigma0_x,sigma0_y,sigma0_z)
+            prior_tmp=self.weights.copy()
+            means_tmp=self.means.copy()
+            var_tmp=self.covariances.copy()
+            prior_tmp=np.append(prior_tmp,[[float(w0)]],axis=0)
+            means_tmp=np.append(means_tmp,[[float(mu0_x),float(mu0_y),float(mu0_z)]],axis=0)
+            var_tmp=np.append(var_tmp,[[float(sigma0_x),float(sigma0_x),float(sigma0_x)]],axis=0)          
+            # print("after append shape:",prior_tmp.shape,means_tmp.shape,var_tmp.shape) 
+            prior_tmp=np.delete(prior_tmp,index_input,axis=0)
+            means_tmp=np.delete(means_tmp,index_input,axis=0)
+            var_tmp=np.delete(var_tmp,index_input,axis=0)
+            # print("after delete shape:",prior_tmp.shape,means_tmp.shape,var_tmp.shape)   
+            mix=self.mix_num
+            self.mix_num=self.mix_num-merge_num+1
+            self.weights=np.array(prior_tmp)
+            self.means=np.array(means_tmp)
+            self.covariances=np.array(var_tmp)
+            # print(self.mix_num,self.weights.shape,self.means.shape,self.covariances.shape)
+        return mix, self.mix_num

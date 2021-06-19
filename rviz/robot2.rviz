@@ -72,7 +72,7 @@ Visualization Manager:
       Color: 255; 255; 255
       Color Transformer: Intensity
       Decay Time: 0
-      Enabled: true
+      Enabled: false
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 4096
@@ -89,7 +89,7 @@ Visualization Manager:
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
-      Value: true
+      Value: false
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -194,6 +194,24 @@ Visualization Manager:
           Value: true
         robot1/base_link:
           Value: true
+        robot1/base_scan:
+          Value: true
+        robot1/camera_depth_frame:
+          Value: true
+        robot1/camera_depth_optical_frame:
+          Value: true
+        robot1/camera_link:
+          Value: true
+        robot1/camera_rgb_frame:
+          Value: true
+        robot1/camera_rgb_optical_frame:
+          Value: true
+        robot1/caster_back_left_link:
+          Value: true
+        robot1/caster_back_right_link:
+          Value: true
+        robot1/imu_link:
+          Value: true
         robot1/map:
           Value: true
         robot1/odom:
@@ -205,6 +223,24 @@ Visualization Manager:
         robot2/base_footprint:
           Value: true
         robot2/base_link:
+          Value: true
+        robot2/base_scan:
+          Value: true
+        robot2/camera_depth_frame:
+          Value: true
+        robot2/camera_depth_optical_frame:
+          Value: true
+        robot2/camera_link:
+          Value: true
+        robot2/camera_rgb_frame:
+          Value: true
+        robot2/camera_rgb_optical_frame:
+          Value: true
+        robot2/caster_back_left_link:
+          Value: true
+        robot2/caster_back_right_link:
+          Value: true
+        robot2/imu_link:
           Value: true
         robot2/map:
           Value: true
@@ -223,7 +259,26 @@ Visualization Manager:
         robot2/map:
           robot2/odom:
             robot2/base_footprint:
-              {}
+              robot2/base_link:
+                robot2/base_scan:
+                  {}
+                robot2/camera_link:
+                  robot2/camera_depth_frame:
+                    robot2/camera_depth_optical_frame:
+                      {}
+                  robot2/camera_rgb_frame:
+                    robot2/camera_rgb_optical_frame:
+                      {}
+                robot2/caster_back_left_link:
+                  {}
+                robot2/caster_back_right_link:
+                  {}
+                robot2/imu_link:
+                  {}
+                robot2/wheel_left_link:
+                  {}
+                robot2/wheel_right_link:
+                  {}
       Update Interval: 0
       Value: true
     - Alpha: 1
