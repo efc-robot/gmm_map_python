@@ -789,12 +789,12 @@ class TrajMapBuilder:
                 self.cloud_list.append(self.prefixsubmap_builder.submap_point_clouds.shape[0])
 
                 #Adaptive Model Selection
-                [ori,after]=self.prefixsubmap_builder.gmm_merge()
-                self.gmm_ori_list.append(ori)
-                self.gmm_after_list.append(after)
-                print("cloud_list:",self.cloud_list)
-                print("gmm_ori_list:",self.gmm_ori_list)
-                print("gmm_after_list:",self.gmm_after_list)
+                # [ori,after]=self.prefixsubmap_builder.gmm_merge()
+                # self.gmm_ori_list.append(ori)
+                # self.gmm_after_list.append(after)
+                # print("cloud_list:",self.cloud_list)
+                # print("gmm_ori_list:",self.gmm_ori_list)
+                # print("gmm_after_list:",self.gmm_after_list)
 
                 # response.output_cloud.header.frame_id=data.header.frame_id #debug
                 # self.tmp_pub.publish(response.output_cloud) #debug
