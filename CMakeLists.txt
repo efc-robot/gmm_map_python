@@ -59,6 +59,8 @@ add_message_files(
   FILES
   gmm.msg
   gmmlist.msg
+  gmmFrame.msg
+  Submap.msg
   SubmapList.msg
   SubmapEntry.msg
 )

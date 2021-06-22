@@ -10,12 +10,13 @@ from gmm_map_python.msg import gmm
 from autolab_core import RigidTransform
 
 class GMMFrame: #GMM建完后操作都在GMMSubmap类中进行
-    def __init__(self):
-        self.mix_num =0
-        self.dim=3
-        self.weights =np.zeros((0,1))
-        self.means =np.zeros((0,3))
-        self.covariances = np.zeros((0,3))
+    def __init__(self, mix_num=0, dim=3, weights=np.zeros((0,1)), 
+        means=np.zeros((0,3)), covariances=np.zeros((0,3))):
+        self.mix_num = mix_num
+        self.dim = dim
+        self.weights = weights
+        self.means = means
+        self.covariances = covariances
         #不要frameid和pose，两者存在submap类中，在生成message和转换的时候再输入
         # self.frame_id=""
         # self.pose=Pose()

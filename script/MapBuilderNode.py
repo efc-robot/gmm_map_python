@@ -11,6 +11,7 @@ from visualization_msgs.msg import Marker,MarkerArray
 from geometry_msgs.msg import Point,Vector3
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from gmm_map_python.msg import gmm
+from gmm_map_python.msg import Submap
 import tf
 import tf2_ros
 from tf2_ros import TransformException
@@ -250,23 +251,25 @@ class ConstraintTransform:
         # print 'tf  :{}'.format(self.constraint)
 
 class InsubmapProcess:
-    def __init__(self, submap_index, robot_id, init_pose_odom, init_pose_map, Descriptor, add_time=None ):
+    def __init__(self, submap_index, robot_id, init_pose_odom, init_pose_map, 
+        Descriptor, add_time=None, point_clouds=np.zeros((0,3)), init_gmm=GMMFrame(), 
+        freezed=False, descriptor=None, feature_point=np.zeros((0,3)), feature_gmm=GMMFrame()):
         self.submap_index = submap_index
         self.robot_id = robot_id
         self.submap_pose_odom = init_pose_odom #相比于odom坐标系的位姿(介入odom),一旦输入就不会改变
         self.submap_pose = init_pose_map #相比于map坐标系的位姿势,一般是从上一个submap递推得到,优化也优化这个
         self.add_time = add_time
-        self.submap_point_clouds = np.zeros((0,3)) #TODO LOCK #讲道理访问这个东西的时候需要加锁      
-        self.submap_gmm=GMMFrame()#GMM地图
+        self.submap_point_clouds = point_clouds #TODO LOCK #讲道理访问这个东西的时候需要加锁      
+        self.submap_gmm=init_gmm #GMM地图
         self.clf = GaussianMixture(n_components=150, covariance_type='diag',max_iter=5) #GMM模型生成器
         self.clf_feature = GaussianMixture(n_components=100, covariance_type='diag') #GMM模型生成器
         self.GMMmodel = None
         self.Octomap = None
-        self.freezed = False
-        self.descriptor = None
+        self.freezed = freezed
+        self.descriptor = descriptor
         self.Descriptor = Descriptor
-        self.submap_feature_point=np.zeros((0,3)) #每一帧submap生成后统一提取的描述子
-        self.submap_feature_gmm=GMMFrame()#GMM地图
+        self.submap_feature_point=feature_point #每一帧submap生成后统一提取的描述子
+        self.submap_feature_gmm=feature_gmm#GMM地图
 
 
         # load weights
@@ -564,7 +567,12 @@ class TrajMapBuilder:
 
     def callback_submap_listener(self, data): #主要是为了处理回环,包括自己的回环和别人的回环  
         recvstr = data.data
-        recvsubmap = pickle.loads(recvstr)
+        #recvsubmap = pickle.loads(recvstr)
+        recvsubmap = InsubmapProcess(data.index, data.robot_id, data.pose_odom, 
+            data.pose, Descriptor, data.add_time, np.array(data.point_clouds).reshape(-1,3),
+            data.submap_gmm, data.freezed, np.array(data.descriptor), 
+            np.array(data.feature_point).reshape(-1,3), data.feature_gmm)
+
         # print(recvsubmap.robot_id)
         # print(recvsubmap.submap_index)
         # print(recvsubmap)
@@ -828,8 +836,19 @@ class TrajMapBuilder:
 
                 self.newsubmap_builder.submap_pose = trans2pose(Rigidtrans2transstamped(new_pose_map).transform)
 
-                pubsubmap = pickle.dumps(self.prefixsubmap_builder)
-                
+                #pubsubmap = pickle.dumps(self.prefixsubmap_builder)
+                pubsubmap = Submap()
+                pubsubmap.index = self.prefixsubmap_builder.submap_index
+                pubsubmap.robot_id = self.prefixsubmap_builder.robot_id
+                pubsubmap.pose = self.prefixsubmap_builder.submap_pose
+                pubsubmap.pose_odom = self.prefixsubmap_builder.submap_pose_odom
+                pubsubmap.add_time = self.prefixsubmap_builder.add_time
+                pubsubmap.is_frozen = self.prefixsubmap_builder.freezed
+                pubsubmap.point_clouds = np.squeeze(self.prefixsubmap_builder.submap_point_clouds.reshape(-1)).tolist()
+                pubsubmap.descriptor = np.squeeze(self.prefixsubmap_builder.descriptor).tolist()
+                pubsubmap.feature_point = np.squeeze(self.prefixsubmap_builder.submap_feature_point.reshape(-1)).tolist()
+                pubsubmap.submap_gmm = self.prefixsubmap_builder.submap_gmm
+                pubsubmap.feature_gmm = self.prefixsubmap_builder.submap_feature_gmm
                 self.submap_publisher.publish(pubsubmap) #将已经建好的submap广播出去
                 print("publish pubsubmap!")
 
