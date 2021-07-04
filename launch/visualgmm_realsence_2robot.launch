@@ -10,12 +10,12 @@
     <arg name="play_bag" value="true" />
 </include>
 
-<node pkg="rosbag" type="play" name="recordplay1" args="--clock -k $(find gmm_map_python)/rosbag/gmm_robot2_noclock.bag $(find gmm_map_python)/rosbag/gmm_robot1_noclock.bag" required="true">
-</node>
+<!-- <node pkg="rosbag" type="play" name="recordplay1" args="clock -k $(find gmm_map_python)/rosbag/gmm_robot2_noclock.bag $(find gmm_map_python)/rosbag/gmm_robot1_noclock.bag" required="true">
+</node> -->
 
 <!-- <include file="$(find turtlebot3sim)/launch/gazebohouse.launch">
 </include> -->
-<!-- <include file="$(find turtlebot3sim)/launch/small_env_two_robots.launch">
-</include> -->
+<include file="$(find turtlebot3sim)/launch/small_env_two_robots.launch">
+</include>
 
 </launch>

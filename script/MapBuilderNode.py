@@ -450,11 +450,12 @@ class TrajMapBuilder:
         self.prefixsubmap_builder = None
         
         self.Descriptor = Descriptor(model_dir='/home/nics/ral_ws/src/gmm_map_python/baseline2/model13.ckpt')
+        self.descriptor_first = None
 
         # self.pose_pub = rospy.Publisher('pose', PoseStamped, queue_size=1)
         self.path_pub = rospy.Publisher('path', Path, queue_size=1)
         self.path_pubodom = rospy.Publisher('pathodom', Path, queue_size=1)
-        self.submap_publisher = rospy.Publisher('/all_submap',String, queue_size=1)
+        self.submap_publisher = rospy.Publisher('/all_submap',Submap, queue_size=1)
         self.all_path_pub = {}
         self.all_path_pub['robot{}'.format(self.self_robot_id)] = self.path_pub
         self.tmp_pub = rospy.Publisher('point_debug', PointCloud2,queue_size=1)
@@ -465,7 +466,7 @@ class TrajMapBuilder:
         self.self_pc_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_self_pointcloud,queue_size=1)
         # self.new_self_submap_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_new_self_pointcloud,queue_size=1)
         # self.new_self_loop_sub = rospy.Subscriber('sampled_points', PointCloud2, self.callback_add_sim_loop)
-        self.new_submap_listener = rospy.Subscriber('/all_submap', String, self.callback_submap_listener)
+        self.new_submap_listener = rospy.Subscriber('/all_submap', Submap, self.callback_submap_listener)
         print("start wait for service")
 
         rospy.wait_for_service('FeatureExtract/Feature_Service')
@@ -738,6 +739,7 @@ class TrajMapBuilder:
             tmp = 1
 
     def callback_self_pointcloud(self, data): #监听pointcloud,自己新建地图,并且保存对应的 odom.
+        #submap 计数提取
         self.callback_new_self_pointcloud(data)
        
         assert isinstance(data, PointCloud2)
@@ -770,6 +772,25 @@ class TrajMapBuilder:
             return
         # print("Before new Submap!",self.new_self_submap)
         if self.new_self_submap: #说明要增加一个新的关键帧
+            gen_cloud_point = point_cloud2.read_points_list(baselink_pointcloud, field_names=("x", "y", "z"), skip_nans=True)
+            gen_np_cloud = np.array(gen_cloud_point) 
+            self.Descriptor.point_cloud = gen_np_cloud.copy()   
+            self.Descriptor.filter()       
+            if self.descriptor_first == None:               
+                self.descriptor_first = self.Descriptor.generate_descriptor()
+                self.descriptor_first = self.descriptor_first / (np.linalg.norm(self.descriptor_first))
+            else:
+                descriptor_tmp = self.Descriptor.generate_descriptor()
+                descriptor_tmp = descriptor_tmp / (np.linalg.norm(descriptor_tmp))
+                cosine_orient = np.dot(descriptor_tmp, self.descriptor_first.T)
+                result=1-cosine_orient
+                print("result:",result)
+                if  result<0.1: #差距太小
+                    print("two submaps are too close, robot stop?")
+                    return 
+                else:
+                    self.descriptor_first=descriptor_tmp
+
             print("start new Submap!")
             self.all_submap_locks['robot{}'.format(self.self_robot_id)].acquire()
 
@@ -789,8 +810,7 @@ class TrajMapBuilder:
                 #提取特征点&特征GMM
                 # submap_point_msg=np2pointcloud2(self.prefixsubmap_builder.submap_point_clouds,self.odom_frame)
                 # response=self.feature_client(submap_point_msg)
-                # self.prefixsubmap_builder.insert_feature(response.output_cloud) #只调用一次，名字到insert实际是提取，内含构建feature_gmm
-                
+                # self.prefixsubmap_builder.insert_feature(response.output_cloud) #只调用一次，名字到insert实际是提取，内含构建feature_gmm               
 
                 #用点云构建GMMsubmap
                 self.prefixsubmap_builder.insert_gmm(self.prefixsubmap_builder.submap_point_clouds)#对新一帧点云生成GMM并添加
@@ -803,9 +823,10 @@ class TrajMapBuilder:
                 # print("cloud_list:",self.cloud_list)
                 # print("gmm_ori_list:",self.gmm_ori_list)
                 # print("gmm_after_list:",self.gmm_after_list)
-
-                # response.output_cloud.header.frame_id=data.header.frame_id #debug
-                # self.tmp_pub.publish(response.output_cloud) #debug
+                
+                #debug code
+                # response.output_cloud.header.frame_id=data.header.frame_id 
+                # self.tmp_pub.publish(response.output_cloud) 
 
                 #生成对应的描述子(基于点云生成)
                 self.prefixsubmap_builder.gen_descriptor_pntcld() 
