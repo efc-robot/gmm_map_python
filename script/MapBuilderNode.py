@@ -12,6 +12,7 @@ from geometry_msgs.msg import Point,Vector3
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from gmm_map_python.msg import gmm
 from gmm_map_python.msg import Submap
+from gmm_map_python.msg import gmmFrame
 import tf
 import tf2_ros
 from tf2_ros import TransformException
@@ -46,7 +47,9 @@ def strip_leading_slash(s):
 def trans2pose(trans):
     pose = Pose()
     pose.orientation = trans.rotation
-    pose.position = trans.translation
+    pose.position.x = trans.translation.x
+    pose.position.y = trans.translation.y
+    pose.position.z = trans.translation.z
     return pose
 
 def pose2trans(pose):
@@ -567,13 +570,21 @@ class TrajMapBuilder:
         return result, fitness
 
     def callback_submap_listener(self, data): #主要是为了处理回环,包括自己的回环和别人的回环  
-        recvstr = data.data
+        #recvstr = data.data
         #recvsubmap = pickle.loads(recvstr)
         recvsubmap = InsubmapProcess(data.index, data.robot_id, data.pose_odom, 
             data.pose, Descriptor, data.add_time, np.array(data.point_clouds).reshape(-1,3),
-            data.submap_gmm, data.freezed, np.array(data.descriptor), 
-            np.array(data.feature_point).reshape(-1,3), data.feature_gmm)
-
+            GMMFrame(data.submap_gmm.mix_num, data.submap_gmm.dim, 
+                np.array(data.submap_gmm.weights), 
+                np.array(data.submap_gmm.means).reshape(-1,3), 
+                np.array(data.submap_gmm.covariances).reshape(-1,3)),
+            data.freezed, np.array(data.descriptor), 
+            np.array(data.feature_point).reshape(-1,3), 
+            GMMFrame(data.feature_gmm.mix_num, data.feature_gmm.dim, 
+                np.array(data.feature_gmm.weights), 
+                np.array(data.feature_gmm.means).reshape(-1,3), 
+                np.array(data.feature_gmm.covariances).reshape(-1,3))
+            )
         # print(recvsubmap.robot_id)
         # print(recvsubmap.submap_index)
         # print(recvsubmap)
@@ -864,12 +875,24 @@ class TrajMapBuilder:
                 pubsubmap.pose = self.prefixsubmap_builder.submap_pose
                 pubsubmap.pose_odom = self.prefixsubmap_builder.submap_pose_odom
                 pubsubmap.add_time = self.prefixsubmap_builder.add_time
-                pubsubmap.is_frozen = self.prefixsubmap_builder.freezed
+                pubsubmap.freezed = self.prefixsubmap_builder.freezed
                 pubsubmap.point_clouds = np.squeeze(self.prefixsubmap_builder.submap_point_clouds.reshape(-1)).tolist()
                 pubsubmap.descriptor = np.squeeze(self.prefixsubmap_builder.descriptor).tolist()
                 pubsubmap.feature_point = np.squeeze(self.prefixsubmap_builder.submap_feature_point.reshape(-1)).tolist()
-                pubsubmap.submap_gmm = self.prefixsubmap_builder.submap_gmm
-                pubsubmap.feature_gmm = self.prefixsubmap_builder.submap_feature_gmm
+                pubsubmap.submap_gmm = gmmFrame(
+                    self.prefixsubmap_builder.submap_gmm.mix_num,
+                    self.prefixsubmap_builder.submap_gmm.dim,
+                    np.squeeze(self.prefixsubmap_builder.submap_gmm.weights).tolist(),
+                    np.squeeze(self.prefixsubmap_builder.submap_gmm.means.reshape(-1)).tolist(),
+                    np.squeeze(self.prefixsubmap_builder.submap_gmm.covariances.reshape(-1)).tolist()
+                ) 
+                pubsubmap.feature_gmm = gmmFrame(
+                    self.prefixsubmap_builder.submap_feature_gmm.mix_num,
+                    self.prefixsubmap_builder.submap_feature_gmm.dim,
+                    np.squeeze(self.prefixsubmap_builder.submap_feature_gmm.weights).tolist(),
+                    np.squeeze(self.prefixsubmap_builder.submap_feature_gmm.means.reshape(-1)).tolist(),
+                    np.squeeze(self.prefixsubmap_builder.submap_feature_gmm.covariances.reshape(-1)).tolist()
+                )
                 self.submap_publisher.publish(pubsubmap) #将已经建好的submap广播出去
                 print("publish pubsubmap!")
 
