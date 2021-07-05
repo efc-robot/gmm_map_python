@@ -264,7 +264,7 @@ class InsubmapProcess:
         self.add_time = add_time
         self.submap_point_clouds = point_clouds #TODO LOCK #讲道理访问这个东西的时候需要加锁      
         self.submap_gmm=init_gmm #GMM地图
-        self.clf = GaussianMixture(n_components=150, covariance_type='diag',max_iter=5) #GMM模型生成器
+        self.clf = GaussianMixture(n_components=100, covariance_type='diag',max_iter=5) #GMM模型生成器
         self.clf_feature = GaussianMixture(n_components=100, covariance_type='diag') #GMM模型生成器
         self.GMMmodel = None
         self.Octomap = None
@@ -342,9 +342,11 @@ class InsubmapProcess:
             transform_submap = Rigidtrans2transstamped(tf_inter_robot * curr_map_base)
             # print "tf_inter_robot:" + str(tf_inter_robot)
             # print "transform_submap:" + str(tf_inter_robot * curr_map_base)
+        # print(self.submap_gmm.means.shape)
         outputgmm=GMMFrame()#GMM地图
         outputgmm.GMMsup(self.submap_gmm)
         outputgmm.GMM2odom(transform_submap) #内部修改自己的参数，以GMMFrame形式存储
+        # print(outputgmm.means)
         return outputgmm
 
     def pointmap2odom(self, tf_inter_robot = None):
@@ -734,8 +736,9 @@ class TrajMapBuilder:
             self.new_self_submap_count += 1
             # print(self.new_self_submap_count)
         else:
-            self.new_self_submap = True # 当设置为True说明有一个新的关键帧
-            self.new_self_submap_count = 0
+            if self.new_self_submap == False:
+                self.new_self_submap = True # 当设置为True说明有一个新的关键帧
+                self.new_self_submap_count = 0
             # print(self.new_self_submap)
 
     def callback_add_sim_loop(self, data):
@@ -783,6 +786,7 @@ class TrajMapBuilder:
             return
         # print("Before new Submap!",self.new_self_submap)
         if self.new_self_submap: #说明要增加一个新的关键帧
+            #如果各帧之间差距太小，就不要新建关键帧
             gen_cloud_point = point_cloud2.read_points_list(baselink_pointcloud, field_names=("x", "y", "z"), skip_nans=True)
             gen_np_cloud = np.array(gen_cloud_point) 
             self.Descriptor.point_cloud = gen_np_cloud.copy()   
@@ -808,7 +812,7 @@ class TrajMapBuilder:
             #version2(1):更新
             self.prefixsubmap_builder = self.newsubmap_builder
 
-            self.newsubmap_builder = InsubmapProcess( self.current_submap_id, self.self_robot_id, trans2pose(transform_odom_base.transform), trans2pose(transform_odom_base.transform), self.Descriptor, pointtime )
+            self.newsubmap_builder = InsubmapProcess( self.current_submap_id, self.self_robot_id, trans2pose(transform_odom_base.transform), trans2pose(transform_odom_base.transform), self.Descriptor, pointtime, point_clouds=np.zeros((0,3)), init_gmm=GMMFrame(), freezed=False, descriptor=None, feature_point=np.zeros((0,3)), feature_gmm=GMMFrame() )
             baselink_pointcloud.header.frame_id = 'robot{}/submap_base_link_{}'.format(self.newsubmap_builder.robot_id,self.newsubmap_builder.submap_index)
             print("self.new_self_submap_{}".format(self.newsubmap_builder.submap_index))
             self.newsubmap_builder.insert_point(baselink_pointcloud) #只调试轨迹的过程中,暂时不需要添加地图\
@@ -985,9 +989,11 @@ class TrajMapBuilder:
 
     def pointmap_merge_single(self): #将每一帧的点云都合并在一起可视化出来
         # final_result = PointCloud2()
-        tmpmap_builder = InsubmapProcess(0,0,Pose(),Pose(),self.Descriptor)
+        tmpmap_builder = InsubmapProcess(0,0,Pose(),Pose(),self.Descriptor,add_time=None, point_clouds=np.zeros((0,3)), init_gmm=GMMFrame(), freezed=False, descriptor=None, feature_point=np.zeros((0,3)), feature_gmm=GMMFrame())
+        # print(tmpmap_builder.submap_gmm.means.shape)
         # if (len(self.list_of_submap) <= 1):
         #     return 
+        # print("self.all_submap_lists.items():",self.all_submap_lists.items())
         for robot_id, submap_list in self.all_submap_lists.items():
             # print 'pointmap_thread: {}'.format(robot_id)
             tf_inter_robot = None
@@ -995,10 +1001,12 @@ class TrajMapBuilder:
                 tf_inter_robot = self.tf_graph.get_tf(int(robot_id[5:]), self.self_robot_id)
                 if tf_inter_robot == None:
                     continue
+
             for submapinst in submap_list:
                 # print 'pointmap_thread: {} - {}'.format(robot_id,submapinst.submap_index)
                 [showpoints, point_debug] = submapinst.pointmap2odom(tf_inter_robot) #不同的点云都在map坐标系中  
-                # self.tmp_pub.publish(point_debug)            
+                # self.tmp_pub.publish(point_debug)
+                # print("tf_inter_robot:",tf_inter_robot)            
                 submapinst_tmp=submapinst.gmmmap2odom(tf_inter_robot)#GMM坐标系转换，因为gmmmap2odom会改自身的参数，所以要新开一个变量暂存
                 # print("gmm2odom:",submapinst.submap_gmm)
                 tmpmap_builder.insert_point(showpoints, ifcheck=False, if_filter=True, ifgmm=False) #GMMmap也会在此函数中添加

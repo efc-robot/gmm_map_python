@@ -194,6 +194,24 @@ Visualization Manager:
           Value: true
         robot1/base_link:
           Value: true
+        robot1/base_scan:
+          Value: true
+        robot1/camera_depth_frame:
+          Value: true
+        robot1/camera_depth_optical_frame:
+          Value: true
+        robot1/camera_link:
+          Value: true
+        robot1/camera_rgb_frame:
+          Value: true
+        robot1/camera_rgb_optical_frame:
+          Value: true
+        robot1/caster_back_left_link:
+          Value: true
+        robot1/caster_back_right_link:
+          Value: true
+        robot1/imu_link:
+          Value: true
         robot1/map:
           Value: true
         robot1/odom:
@@ -206,7 +224,23 @@ Visualization Manager:
           Value: true
         robot2/base_link:
           Value: true
-        robot2/map:
+        robot2/base_scan:
+          Value: true
+        robot2/camera_depth_frame:
+          Value: true
+        robot2/camera_depth_optical_frame:
+          Value: true
+        robot2/camera_link:
+          Value: true
+        robot2/camera_rgb_frame:
+          Value: true
+        robot2/camera_rgb_optical_frame:
+          Value: true
+        robot2/caster_back_left_link:
+          Value: true
+        robot2/caster_back_right_link:
+          Value: true
+        robot2/imu_link:
           Value: true
         robot2/odom:
           Value: true
@@ -223,7 +257,26 @@ Visualization Manager:
         robot1/map:
           robot1/odom:
             robot1/base_footprint:
-              {}
+              robot1/base_link:
+                robot1/base_scan:
+                  {}
+                robot1/camera_link:
+                  robot1/camera_depth_frame:
+                    robot1/camera_depth_optical_frame:
+                      {}
+                  robot1/camera_rgb_frame:
+                    robot1/camera_rgb_optical_frame:
+                      {}
+                robot1/caster_back_left_link:
+                  {}
+                robot1/caster_back_right_link:
+                  {}
+                robot1/imu_link:
+                  {}
+                robot1/wheel_left_link:
+                  {}
+                robot1/wheel_right_link:
+                  {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -273,13 +326,13 @@ Visualization Manager:
       Unreliable: false
       Value: true
     - Class: rviz/MarkerArray
-      Enabled: false
+      Enabled: true
       Marker Topic: /robot1/GMMvisual
       Name: MarkerArray
       Namespaces:
         {}
       Queue Size: 100
-      Value: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
