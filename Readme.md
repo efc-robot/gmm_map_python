@@ -1,8 +1,10 @@
 # MR-GMMapping
 <!-- 该项目是多机 GMM Submap 建图的工作 -->
-This is the open-source project MR-GMMapping, a communication efficient **M**ulti-**R**obot **GMM**-based **Mapping** system.
+This is the open-source project **MR-GMMapping**, a communication efficient **M**ulti-**R**obot **GMM**-based **Mapping** system.
+
 The related paper "MR-GMMapping: Communication Efficient Multi-Robot Mapping System via Gaussian Mixture Model" is submitted to the IEEE Robotics and Automation Letters (RA-L) with the 2022 International Conference on Robotics and Automation（ICRA 2022）.
-A related video is resleased at....
+
+The video demo is resleased at....
 
 ## Platform
 - Multi-robots with NVIDIA Jetson TX2, Intel RealSense T265, and depth camera D435i
@@ -12,8 +14,8 @@ A related video is resleased at....
  
 ## Dependency
 
-项目基于 ROS 和 Python2
-需要安装的库主要有
+<!-- 项目基于 ROS 和 Python2
+需要安装的库主要有 -->
 ### Pytorch for Place Recognition
 ```
 pip install torch torchvision
