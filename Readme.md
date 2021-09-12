@@ -24,10 +24,11 @@ pip install torch torchvision
 Pre-trained model is available [here]
 Then change the regarding path of `model13.ckpt` in `MapBuilderNode.py`.
 
-###Python-PCL
+### Python-PCL
+
 Useful reference [here](https://python-pcl-fork.readthedocs.io/en/rc_patches4/install.html#install-python-pcl).
 
-###GTSAM
+### GTSAM
 
 ```
 git clone https://bitbucket.org/gtborg/gtsam.git
