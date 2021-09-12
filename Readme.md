@@ -4,7 +4,7 @@ This is the open-source project **MR-GMMapping**, a communication efficient **M*
 
 The related paper "MR-GMMapping: Communication Efficient Multi-Robot Mapping System via Gaussian Mixture Model" is submitted to the IEEE Robotics and Automation Letters (RA-L) with the 2022 International Conference on Robotics and Automation（ICRA 2022）.
 
-The video demo is resleased at....
+The video demo is resleased at [bilibili] and [youtube](https://www.youtube.com/watch?v=gIomG8qBk8U)
 
 ## Platform
 - Multi-robots with NVIDIA Jetson TX2, Intel RealSense T265, and depth camera D435i
@@ -21,17 +21,36 @@ The video demo is resleased at....
 pip install torch torchvision
 ```
 
-Pre-trained model is available at...
-When you 
+Pre-trained model is available [here]
+Then change the regarding path of `model13.ckpt` in `MapBuilderNode.py`.
+
+###Python-PCL
+Useful reference [here](https://python-pcl-fork.readthedocs.io/en/rc_patches4/install.html#install-python-pcl).
+
+###GTSAM
+
+```
+git clone https://bitbucket.org/gtborg/gtsam.git
+mkdir build
+cd build
+cmake .. -DGTSAM_INSTALL_CYTHON_TOOLBOX=on
+make check
+make install
+cd cython
+sudo python setup.py install
+```
 
 ### Other dependency 
 ```
 sudo apt install ros-melodic-tf2-ros
 pip install autolab_core
 pip install sklearn
+pip install future
+pip install transforms3d
+pip install pygraph
 ```
 
-Basically, you can use ```apt install ros-melodic-(missing library)``` to install the missing libraries.
+For ROS libraries, you can use ```apt install ros-melodic-(missing library)``` to install the missing libraries.
 
 ## Datasets
 
