@@ -787,24 +787,24 @@ class TrajMapBuilder:
         # print("Before new Submap!",self.new_self_submap)
         if self.new_self_submap: #说明要增加一个新的关键帧
             #如果各帧之间差距太小，就不要新建关键帧
-            gen_cloud_point = point_cloud2.read_points_list(baselink_pointcloud, field_names=("x", "y", "z"), skip_nans=True)
-            gen_np_cloud = np.array(gen_cloud_point) 
-            self.Descriptor.point_cloud = gen_np_cloud.copy()   
-            self.Descriptor.filter()       
-            if self.descriptor_first == None:               
-                self.descriptor_first = self.Descriptor.generate_descriptor()
-                self.descriptor_first = self.descriptor_first / (np.linalg.norm(self.descriptor_first))
-            else:
-                descriptor_tmp = self.Descriptor.generate_descriptor()
-                descriptor_tmp = descriptor_tmp / (np.linalg.norm(descriptor_tmp))
-                cosine_orient = np.dot(descriptor_tmp, self.descriptor_first.T)
-                result=1-cosine_orient
-                print("result:",result)
-                if  result<0.1: #差距太小
-                    print("two submaps are too close, robot stop?")
-                    return 
-                else:
-                    self.descriptor_first=descriptor_tmp
+            # gen_cloud_point = point_cloud2.read_points_list(baselink_pointcloud, field_names=("x", "y", "z"), skip_nans=True)
+            # gen_np_cloud = np.array(gen_cloud_point) 
+            # self.Descriptor.point_cloud = gen_np_cloud.copy()   
+            # self.Descriptor.filter()       
+            # if self.descriptor_first == None:               
+            #     self.descriptor_first = self.Descriptor.generate_descriptor()
+            #     self.descriptor_first = self.descriptor_first / (np.linalg.norm(self.descriptor_first))
+            # else:
+            #     descriptor_tmp = self.Descriptor.generate_descriptor()
+            #     descriptor_tmp = descriptor_tmp / (np.linalg.norm(descriptor_tmp))
+            #     cosine_orient = np.dot(descriptor_tmp, self.descriptor_first.T)
+            #     result=1-cosine_orient
+            #     print("result:",result)
+            #     if  result<0.1: #差距太小
+            #         print("two submaps are too close, robot stop?")
+            #         return 
+            #     else:
+            #         self.descriptor_first=descriptor_tmp
 
             print("start new Submap!")
             self.all_submap_locks['robot{}'.format(self.self_robot_id)].acquire()
