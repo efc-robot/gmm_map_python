@@ -4,7 +4,7 @@ This is the open-source project **MR-GMMapping**, a communication efficient **M*
 
 The related paper "MR-GMMapping: Communication Efficient Multi-Robot Mapping System via Gaussian Mixture Model" is submitted to the IEEE Robotics and Automation Letters (RA-L) with the 2022 International Conference on Robotics and Automation（ICRA 2022）.
 
-The video demo is resleased at [bilibili (Chinese Youtube)](https://www.bilibili.com/video/BV1TU4y1N7Yn?from=search&seid=3677956896739468342&spm_id_from=333.337.0.0) and [Youtube](https://www.youtube.com/watch?v=gIomG8qBk8U)
+The video demo is resleased at [bilibili (Chinese Youtube)](https://www.bilibili.com/video/BV1TU4y1N7Yn?from=search&seid=3677956896739468342&spm_id_from=333.337.0.0) and [Youtube](https://www.youtube.com/watch?v=Ut77xZi6cXo)
 
 ## Platform
 - Multi-robots with NVIDIA Jetson TX2, Intel RealSense T265, and depth camera D435i
@@ -55,7 +55,7 @@ For ROS libraries, you can use ```apt install ros-melodic-(missing library)``` t
 
 ## Datasets
 
-The ROS bags of the multi-robot simulators can be downloaded at...
+The ROS bags of the multi-robot simulators can be downloaded [here](https://cloud.tsinghua.edu.cn/d/b37383f4c5e145c2b92a/).
 
 You can also use the keyboard to control the robots in the Gazebo simulator by running
 ```
