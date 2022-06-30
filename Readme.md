@@ -21,7 +21,7 @@ The video demo is resleased at [bilibili (Chinese Youtube)](https://www.bilibili
 pip install torch torchvision
 ```
 
-Pre-trained model is available [here](https://cloud.tsinghua.edu.cn/d/b37383f4c5e145c2b92a/)
+Pre-trained model is available [here](https://cloud.tsinghua.edu.cn/f/cb267e85967744eaac5e/)
 Then change the regarding path of `model13.ckpt` in `MapBuilderNode.py`.
 
 ### Python-PCL
@@ -55,7 +55,7 @@ For ROS libraries, you can use ```apt install ros-melodic-(missing library)``` t
 
 ## Datasets
 
-The ROS bags of the multi-robot simulators can be downloaded [here](https://cloud.tsinghua.edu.cn/d/b37383f4c5e145c2b92a/).
+The ROS bags of the multi-robot simulators can be downloaded [here](https://cloud.tsinghua.edu.cn/f/fa70b8d8be1d4aa69eec/).
 
 You can also use the keyboard to control the robots in the Gazebo simulator by running
 ```
